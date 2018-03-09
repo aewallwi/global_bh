@@ -32,3 +32,7 @@ E_HEI_ION=24.7#eV
 SIGMAT=6.625e-25#cm^2 Thompson cross-section
 HPLANCK_KEV=4.135668e-18 #planck constant in keV seconds
 ERG=1e-7
+EV=1.60218E-19#1 electron volt in eV
+YP=25.
+F_HE=YP/(1-.75*YP)
+F_H=(1.-YP)/(1.-.75*YP)

@@ -9,7 +9,7 @@ import scipy.integrate as integrate
 from settings import COSMO,TEDDINGTON,MBH_INTERP_MAX,MBH_INTERP_MIN,SPLINE_DICT
 from settings import M_INTERP_MIN,LITTLEH,PI,JY,DH,MP,MSOL
 from settings import N_INTERP_Z,N_INTERP_MBH,Z_INTERP_MAX,Z_INTERP_MIN,ERG
-from settings import M_INTERP_MAX,KPC
+from settings import M_INTERP_MAX,KPC,YP
 from settings import N_TSTEPS,E_HI_ION,E_HEI_ION,E_HEI_ION,SIGMAT
 from cosmo_utils import massfunc,dict2tuple,tvir2mvir
 import scipy.interpolate as interp
@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import radio_background as RB
 import recfast4py.recfast as recfast
 
-def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),YP=0.25,T4=1.,**kwargs):
+def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),T4=1.,**kwargs):
     '''
     compute ionization fraction by integrating differential equation (Madau 1999)
     '''
@@ -33,7 +33,7 @@ def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),YP=0.25,T4=1.,**kwargs):
     qdots_he=np.zeros_like(taxis)
     dtaus=np.zeros_like(taxis)
     taus=np.zeros_like(qvals)
-    nH0=(1.-YP)/(1.-.75*YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in coMpc^-3
+    nH0=(1.-YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in coMpc^-3
     nH0cm=nH0/(1e3*KPC*1e2)**3./LITTLEH**3.#hydrogen density at z=0 in cm^-3
     chi=YP/4./(1.-YP)
     nHe0cm=chi*nH0cm
@@ -63,13 +63,15 @@ def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),YP=0.25,T4=1.,**kwargs):
     #print fesc*ndot_ion(zval,**kwargs)*1e9*3.15e7s
     #print nH0
     return zaxis,taxis,qvals,taus,qdots,dtaus
-def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,Yp=0.25,NX=100,XRAYMAX=1e2,**kwargs):
+def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**kwargs):
     #first compute QHII
-    nH0=(1.-YP)/(1.-.75*YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in coMpc^-3
+    nH0=(1.-YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in coMpc^-3
     nH0cm=nH0/(1e3*KPC*1e2)**3./LITTLEH**3.#hydrogen density at z=0 in cm^-3
     chi=YP/4./(1.-YP)
     nHe0cm=chi*nH0cm
     nHe0=chi*nH0
+    nB0=nH0+nHe0
+    nB0cm=nH0cm+nHe0cm
     print('Computing HII Evolution\n')
     zaxis,taxis,qvals,_,_,_=q_ionize(zlow,fesc,ntimes=ntimes,T4=T4,Yp=Yp,**kwars)
     #for each z in zaxis
@@ -77,7 +79,8 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,Yp=0.25,NX=100,XRAYMAX=1e2,**
     #NX=100
     #XRAYMAX=1e4#start with very high maximum energy. The maximum value at each redshift should be
                #XRAYMAX
-    xray_axis=np.logspace(np.log10(kwargs['EX_min']),np.log10(XRAYMAX),NX)#interpolate between min_X and 10 keV
+    xray_axes=np.zeros((ntimes,NX))
+    xray_axes[0]=np.logspace(np.log10(kwargs['EX_min']),np.log10(XRAYMAX),NX)#interpolate between min_X and 10 keV
     #initialize optical depth table and Tk
     Tks=np.zeros_like(zaxis)
     xes=np.zeros_like(zaxis)
@@ -102,20 +105,22 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,Yp=0.25,NX=100,XRAYMAX=1e2,**
         dz=zaxis[tnum-1]-zaxis[tnum]
         zm1=zaxis[tnum-1]
         qm1=qvals[tnum-1]
-        zm1=xes[tnum-1]
+        xem1=xes[tnum-1]
+        xim1=qm1+(1-qm1)*xem1#ionized fraction from HI and HII regions
         dz=zm1-zval
         tau_splines={}
-        xray_axis=np.logspace(np.log10(kwargs['EX_min']),np.log10(XRAYMAX*(1.+kwargs['zmax'])/\
+        xray_axes[tnum]=np.logspace(np.log10(kwargs['EX_min']),np.log10(XRAYMAX*(1.+kwargs['zmax'])/\
         (1.+zval)))
-        dlogx=xray_axis[1]-xray_axis[0]
+        dlogx=xray_axes[tnum][1]-xray_axes[tnum][0]
         print('calculating tau values at z=%.2f'%(zval))
-        for xnum,ex in enumerate(xray_axis):
+        for xnum,ex in enumerate(xray_axes[tnum]):
             #compute the optical depth to last redshift using linear approximation
             dtau=dz*(DH*1e3*KPC*1e2)*(1.+zm1)**2./COSMO.Ez(zm1)*(1.-qm1)\
-            *((1-xm1)*nH0cm*sigma_HLike(ex*1e3,z=1.)\
-            +(1-xm1)*nHe0cm*sigma_HeI(ex*1e3)\
-            +xm1*nHe0cm*sigma_HLike(ex*1e3,z=2.))
-            tau_vals[xnum,:-1]=dtau+np.vectorize(lambda x: taus[zm1](ex*(1.+zval)/(1.+zm1),x))(zaxis[:tnum])
+            *((1.-xem1)*nH0cm*sigma_HLike(ex*1e3,z=1.)\
+            +(1.-xem1)*nHe0cm*sigma_HeI(ex*1e3)\
+            +xem1*nHe0cm*sigma_HLike(ex*1e3,z=2.))
+            tau_vals[xnum,:-1]=dtau+np.vectorize(lambda x:\
+            taus[zm1](ex*(1.+zval)/(1.+zm1),x))(zaxis[:tnum])
             #valuate tau values at energy ex to all higher redshifts
             tau_splines[ex]=interp.interp1d(zaxis[:tnum+1][::-1],tau_vals[xnum][::-1],
             bounds_error=False,fill_value=0.,kind='linear')
@@ -131,24 +136,30 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,Yp=0.25,NX=100,XRAYMAX=1e2,**
             return b+a*np.log10(ex)
         taus[zaxis[tnum]]=tau_function
         #now that we have a tau_function, lets compute the integrated fluxes
-        print('Computing integrated x-ray fluxes at z=%.2f'%zval)
+        print('Computing integrated x-ray fluxes at z=%.2f'%zm1)
         #for xnum,ex in enumerate(xray_axis):
             #I am here!
-        jx_vals=np.zeros_like(xray_axis)
-        for exnum,ex in enumerate(xray_axis):
-            g=lambda z:np.exp(-tau_function(ex,z))\
-            *emissivity_X_gridded(z,ex*(1.+z)/(1.+zval),**kwargs)/COSMO.Ez(z)\
-            /(1.+z)
-            jx_vals[exnum]=(1.+zval)**3./4./PI*DH*integrate.quad(zval,zaxis[0])\
+
+        jx_vals=np.zeros_like(xray_axes[tnum-1])
+        for exnum,ex in enumerate(xray_axes[tnum-1]):
+            g=lambda x:np.exp(-taus[zm1](ex,x))\
+            *emissivity_X_gridded(x,ex*(1.+x)/(1.+zm1),**kwargs)/COSMO.Ez(x)\
+            /(1.+x)
+            jx_vals[exnum]=(1.+zm1)**3./4./PI*DH*integrate.quad(zm1,zaxis[0])\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.
             #gives flux in Watts/keV/(cm)^2/Sr
             #convert flux to keV sec^-1/keV/cm^2/Sr
-            
+            jx_vals[exnum]=jx_vals[exnum]/EV/1e3
         jx_func=interp.interp1d(np.log(xray_axis),jx_vals)
+        g=lambda x:4.*PI*jx_func(x)\
+        *interp_heat_val(np.exp(x)*1e3,xem1,'f_heat')\
+        *((np.exp(x)*1e3-E_HI_ION)*(1.-xem1)*sigma_HLike(np.exp(x)*1e3)*F_H\
+        +F_HE*(np.exp(x)*1e3-E_HEI_ION)*(1-xem1)*sigma_HeI(np.exp(x)*1e3)\
+        +(1-E_HEII_ION)*xem1*F_HE*sigma_HLike(np.exp(x)*1e3,z=2.))
 
 
 
-        print('Computing Ionizatin rate at z=%.2f'%zval)
+        print('Computing Ionization rate at z=%.2f'%zval)
         print('Computing Heating rate at z=%.2f'%zval)
         print('Tk=%.2f,xe=%.3f'%(Tks[tnum],xes[tnum]))
 
@@ -631,7 +642,8 @@ def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),YP=0.25,T4=1.,**kwargs):
     qdots_he=np.zeros_like(taxis)
     dtaus=np.zeros_like(taxis)
     taus=np.zeros_like(qvals)
-    nH0=(1.-YP)/(1.-.75*YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in coMpc^-3
+    #nH0=(1.-YP)/(1.-.75*YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in coMpc^-3
+    nH0=(1.-YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in h^3coMpc^-3
     nH0cm=nH0/(1e3*KPC*1e2)**3./LITTLEH**3.#hydrogen density at z=0 in cm^-3
     chi=YP/4./(1.-YP)
     nHe0cm=chi*nH0cm
