@@ -63,13 +63,21 @@ def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),YP=0.25,T4=1.,**kwargs):
     #print fesc*ndot_ion(zval,**kwargs)*1e9*3.15e7s
     #print nH0
     return zaxis,taxis,qvals,taus,qdots,dtaus
-def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,Yp=0.25,**kwargs):
+def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,Yp=0.25,NX=100,XRAYMAX=1e2,**kwargs):
     #first compute QHII
+    nH0=(1.-YP)/(1.-.75*YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in coMpc^-3
+    nH0cm=nH0/(1e3*KPC*1e2)**3./LITTLEH**3.#hydrogen density at z=0 in cm^-3
+    chi=YP/4./(1.-YP)
+    nHe0cm=chi*nH0cm
+    nHe0=chi*nH0
     print('Computing HII Evolution\n')
     zaxis,taxis,qvals,_,_,_=q_ionize(zlow,fesc,ntimes=ntimes,T4=T4,Yp=Yp,**kwars)
     #for each z in zaxis
     jvals=[]
-    xray_axis=np.logspace(np.log10(kwargs['EX_min']),1,30)#interpolate between min_X and 10 keV
+    #NX=100
+    #XRAYMAX=1e4#start with very high maximum energy. The maximum value at each redshift should be
+               #XRAYMAX
+    xray_axis=np.logspace(np.log10(kwargs['EX_min']),np.log10(XRAYMAX),NX)#interpolate between min_X and 10 keV
     #initialize optical depth table and Tk
     Tks=np.zeros_like(zaxis)
     xes=np.zeros_like(zaxis)
@@ -80,11 +88,59 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,Yp=0.25,**kwargs):
     h100=LITTLEH, Nnu=COSMO.Neff, F=1.14, fDM=0., switch=0, npz=1000, zstart=10000, zend=zaxis[0])\
     xes[0]=Xe_H[-1]#xe in non HI regions set to zero at first (or recfast)
     Tks[0]=TM[-1]#Temperature from recfast
+    taus={}
+    def tau0(ex,zp):
+        return 0.
+    taus[zaxis[0]]=lambda x,y:tau0(x,y)#will return 0. for all frequencies
+    #array of taus
     print('Starting Evolution at z=%.2f, xe=%.2e, Tk=%.2f'%(zaxis[0],xes[0],Tks[0]))
-    for tnum,zval,tval in enumerate(zip(zaxis,taxis)):
+    for tnum in enumerate(1,len(taxis)):
         #first compute the optical depths to higher redshifts
-        for xray_energy in xray_axis:
-            #compute the optical depth to last redshift
+        zval,tval=zaxis[tnum],taxis[tnum]
+        tau_vals=np.zeros((len(xvals),tnum+1))
+        dz=zaxis[tnum-1]-zaxis[tnum]
+        zm1=zaxis[tnum-1]
+        qm1=qvals[tnum-1]
+        zm1=xes[tnum-1]
+        dz=zm1-zval
+        tau_splines={}
+        xray_axis=np.logspace(np.log10(kwargs['EX_min']),np.log10(XRAYMAX*(1.+kwargs['zmax'])/\
+        (1.+zval)))
+        dlogx=xray_axis[1]-xray_axis[0]
+        print('calculating tau values at z=%.2f'%(zval))
+        for xnum,ex in enumerate(xray_axis):
+            #compute the optical depth to last redshift using linear approximation
+            dtau=dz*(DH*1e3*KPC*1e2)*(1.+zm1)**2./COSMO.Ez(zm1)*(1.-qm1)\
+            *((1-xm1)*nH0cm*sigma_HLike(ex*1e3,z=1.)\
+            +(1-xm1)*nHe0cm*sigma_HeI(ex*1e3)\
+            +xm1*nHe0cm*sigma_HLike(ex*1e3,z=2.))
+            tau_vals[xnum,:-1]=dtau+np.vectorize(lambda x: taus[zm1](ex*(1.+zval)/(1.+zm1),x))(zaxis[:tnum])
+            #valuate tau values at energy ex to all higher redshifts
+            tau_splines[ex]=interp.interp1d(zaxis[:tnum+1][::-1],tau_vals[xnum][::-1],
+            bounds_error=False,fill_value=0.,kind='linear')
+        def tau_fuction(ex,zp):
+            #find high and low ex
+            exi_l=int((np.log10(ex)-np.log10(kwargs['EX_min']))/dlogx)
+            exi_u=exi_l+1
+            tau_l=tau_splines[exi_l](zp)
+            tau_h=tau_splines[exi_h](zp)
+            #interpolate logarithmically
+            a=np.log10(tau_h/tau_l)/(np.log10(xray_axis[exi_h]/xray_axis[exi_l]))
+            b=np.log10(tau_h)-a*np.log10(ex_h)
+            return b+a*np.log10(ex)
+        taus[zaxis[tnum]]=tau_function
+        #now that we have a tau_function, lets compute the integrated fluxes
+        print('computing integrated x-ray fluxes at z=%.2f')
+        for xnum,ex in enumerate(xray_axis):
+            
+
+
+
+
+
+
+            #for each x-ray energy, define interpolation function that
+
 
 
 
