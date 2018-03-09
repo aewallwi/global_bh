@@ -130,17 +130,12 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,Yp=0.25,NX=100,XRAYMAX=1e2,**
             return b+a*np.log10(ex)
         taus[zaxis[tnum]]=tau_function
         #now that we have a tau_function, lets compute the integrated fluxes
-        print('computing integrated x-ray fluxes at z=%.2f')
+        print('computing integrated x-ray fluxes at z=%.2f'%zval)
         for xnum,ex in enumerate(xray_axis):
-            
-
-
-
-
-
-
-            #for each x-ray energy, define interpolation function that
-
+            #I am here!
+        print('Computing Ionizatin rate at z=%.2f'%zval)
+        print('Computing Heating rate at z=%.2f'%zval)
+        print('Tk=%.2f,xe=%.3f'%(Tks[tnum],xes[tnum]))
 
 
 
