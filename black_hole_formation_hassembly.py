@@ -10,13 +10,13 @@ from settings import COSMO,TEDDINGTON,MBH_INTERP_MAX,MBH_INTERP_MIN,SPLINE_DICT
 from settings import M_INTERP_MIN,LITTLEH,PI,JY,DH,MP,MSOL
 from settings import N_INTERP_Z,N_INTERP_MBH,Z_INTERP_MAX,Z_INTERP_MIN,ERG
 from settings import M_INTERP_MAX,KPC
-from settings import N_TSTEPS,E_HI_ION,E_HEI_ION,E_HEIII_ION,SIGMAT
+from settings import N_TSTEPS,E_HI_ION,E_HEI_ION,E_HEI_ION,SIGMAT
 from cosmo_utils import massfunc,dict2tuple,tvir2mvir
 import scipy.interpolate as interp
 import copy
 import matplotlib.pyplot as plt
 import radio_background as RB
-import recfast4py
+import recfast4py.recfast as recfast
 
 def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),YP=0.25,T4=1.,**kwargs):
     '''
@@ -84,10 +84,11 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,Yp=0.25,NX=100,XRAYMAX=1e2,**
     zdec=137.*(COSMO.Ob(0)*LITTLEH**2./.022)**.4-1.
     Tks[0]=2.73*(1+zdec)*(1+zaxis[0])/(1.+zdec)**2.#initialize first Tk to equal adiabatic cooled value.
     print('Initializing xe,Tk with RecFast\n')
-    zarr, Xe_H, Xe_He, Xe ,TM=recfast4py.recfast.Xe_frac(Yp=Yp, T0=COSMO.Tcmb0, Om=COSMO.Om0, Ob=COSMO.Ob0, OL=COSMO.Ode0, Ok=COSMO.Ok(0.),
-    h100=LITTLEH, Nnu=COSMO.Neff, F=1.14, fDM=0., switch=0, npz=1000, zstart=10000, zend=zaxis[0])\
-    xes[0]=Xe_H[-1]#xe in non HI regions set to zero at first (or recfast)
-    Tks[0]=TM[-1]#Temperature from recfast
+    zarr, Xe_H, Xe_He, Xe ,TM=recfast.Xe_frac(Yp=Yp, T0=COSMO.Tcmb0,
+    Om=COSMO.Om0, Ob=COSMO.Ob0, OL=COSMO.Ode0, Ok=0.,
+    h100=LITTLEH, Nnu=COSMO.Neff, F=1.14, fDM=0.)
+    xes[0]=interp.interp1d(zarr,Xe)(zaxis[0])#xe in non HI regions set to zero at first (or recfast)
+    Tks[0]=interp.interp1d(zarr,TM)(zaxis[0])#Temperature from recfast
     taus={}
     def tau0(ex,zp):
         return 0.
@@ -130,9 +131,23 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,Yp=0.25,NX=100,XRAYMAX=1e2,**
             return b+a*np.log10(ex)
         taus[zaxis[tnum]]=tau_function
         #now that we have a tau_function, lets compute the integrated fluxes
-        print('computing integrated x-ray fluxes at z=%.2f'%zval)
-        for xnum,ex in enumerate(xray_axis):
+        print('Computing integrated x-ray fluxes at z=%.2f'%zval)
+        #for xnum,ex in enumerate(xray_axis):
             #I am here!
+        jx_vals=np.zeros_like(xray_axis)
+        for exnum,ex in enumerate(xray_axis):
+            g=lambda z:np.exp(-tau_function(ex,z))\
+            *emissivity_X_gridded(z,ex*(1.+z)/(1.+zval),**kwargs)/COSMO.Ez(z)\
+            /(1.+z)
+            jx_vals[exnum]=(1.+zval)**3./4./PI*DH*integrate.quad(zval,zaxis[0])\
+            /(1e3*KPC*1e2)**2.*LITTLEH**3.
+            #gives flux in Watts/keV/(cm)^2/Sr
+            #convert flux to keV sec^-1/keV/cm^2/Sr
+            
+        jx_func=interp.interp1d(np.log(xray_axis),jx_vals)
+
+
+
         print('Computing Ionizatin rate at z=%.2f'%zval)
         print('Computing Heating rate at z=%.2f'%zval)
         print('Tk=%.2f,xe=%.3f'%(Tks[tnum],xes[tnum]))
@@ -197,8 +212,9 @@ def init_interpolation_tables():
                        'x_int_tables/xi_0.990.dat',
                        'x_int_tables/xi_0.999.dat']
 
-    SPLINE_DICT['xis']=np.array()[1e-4,2.318e-4,4.677e-4,1.0e-3,2.318e-3,
-    4.677e-3,1.0e-2,2.318e-2,4.677e-3,1.0e-2,2.318e-2,4.677e-2,1.0e-1,.5,.9,.99,.999])
+    SPLINE_DICT['xis']=np.array([1e-4,2.318e-4,4.677e-4,1.0e-3,2.318e-3,
+    4.677e-3,1.0e-2,2.318e-2,4.677e-3,1.0e-2,2.318e-2,
+    4.677e-2,1.0e-1,.5,.9,.99,.999])
     for xi,tname in zip(table_names,ionized_fractions):
         itable=np.loadtxt(tname,skiprows=3)
         SPLINE_DICT[('f_ion',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,1])
