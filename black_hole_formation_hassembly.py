@@ -16,6 +16,81 @@ import scipy.interpolate as interp
 import copy
 import matplotlib.pyplot as plt
 import radio_background as RB
+import recfast4py
+
+def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),YP=0.25,T4=1.,**kwargs):
+    '''
+    compute ionization fraction by integrating differential equation (Madau 1999)
+    '''
+    tmax=COSMO.age(np.min([kwargs['zmin'],zlow]))
+    tmin=COSMO.age(kwargs['zmax'])
+    taxis=np.linspace(tmin,tmax,ntimes)#times in Gyr
+    dt=taxis[1]-taxis[0]
+    zaxis=COSMO.age(taxis,inverse=True)#z axis
+    qvals=np.zeros_like(taxis)
+    qvals_he=np.zeros_like(taxis)
+    qdots=np.zeros_like(taxis)
+    qdots_he=np.zeros_like(taxis)
+    dtaus=np.zeros_like(taxis)
+    taus=np.zeros_like(qvals)
+    nH0=(1.-YP)/(1.-.75*YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in coMpc^-3
+    nH0cm=nH0/(1e3*KPC*1e2)**3./LITTLEH**3.#hydrogen density at z=0 in cm^-3
+    chi=YP/4./(1.-YP)
+    nHe0cm=chi*nH0cm
+    nHe0=chi*nH0
+    for tnum in range(1,len(qvals)):
+        tval,zval=taxis[tnum-1],zaxis[tnum-1]
+        crr=2.9*((1.+zval)/6.)**(-1.1)#clumping factor
+        trec=1./(crr*(1+chi)*nH0cm*(1.+zval)**3.*2.6e-13*(T4)**-.7)/1e9/3.15e7# trec in Gyr
+        trec_he=1./((1.+2.*chi)*nH0cm*(1.+zval)**3.*2*2.6e-13*(T4/4)**-.7*crr)/1e9/3.15e7
+        #print trec
+        #if not(norec):
+        if zval>=kwargs['zmin']:
+            qdots[tnum-1]=.9*fesc*ndot_ion(zval,**kwargs)/nH0*1e9*3.15e7-qvals[tnum-1]/trec
+            qdots_he[tnum-1]=.1*fesc*ndot_ion(zval,**kwargs)/nHe0*1e9*3.15e7-qvals_he[tnum-1]/trec_he
+        else:
+            qdots[tnum-1]=-qvals[tnum-1]/trec
+            qdots_he[tnum-1]=-qvals_he[tnum-1]/trec_he
+        #else:
+        #    qdot=fesc*ndot_ion(zval,**kwargs)/nH0*1e9*3.15e7
+        qvals[tnum]=np.min([1.,qvals[tnum-1]+dt*qdots[tnum-1]])
+        qvals_he[tnum]=np.min([1.,qvals_he[tnum-1]+dt*qdots_he[tnum-1]])
+        dz=-zaxis[tnum]+zaxis[tnum-1]
+        DHcm=3e5/COSMO.H0*1e3*1e2*KPC
+        dtaus[tnum-1]=DHcm*nH0cm*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
+        (qvals[tnum-1]*(1+chi)+qvals_he[tnum-1]*chi)*dz
+        taus[tnum]=taus[tnum-1]+dtaus[tnum-1]
+    #print fesc*ndot_ion(zval,**kwargs)*1e9*3.15e7s
+    #print nH0
+    return zaxis,taxis,qvals,taus,qdots,dtaus
+def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,Yp=0.25,**kwargs):
+    #first compute QHII
+    print('Computing HII Evolution\n')
+    zaxis,taxis,qvals,_,_,_=q_ionize(zlow,fesc,ntimes=ntimes,T4=T4,Yp=Yp,**kwars)
+    #for each z in zaxis
+    jvals=[]
+    xray_axis=np.logspace(np.log10(kwargs['EX_min']),1,30)#interpolate between min_X and 10 keV
+    #initialize optical depth table and Tk
+    Tks=np.zeros_like(zaxis)
+    xes=np.zeros_like(zaxis)
+    zdec=137.*(COSMO.Ob(0)*LITTLEH**2./.022)**.4-1.
+    Tks[0]=2.73*(1+zdec)*(1+zaxis[0])/(1.+zdec)**2.#initialize first Tk to equal adiabatic cooled value.
+    print('Initializing xe,Tk with RecFast\n')
+    zarr, Xe_H, Xe_He, Xe ,TM=recfast4py.recfast.Xe_frac(Yp=Yp, T0=COSMO.Tcmb0, Om=COSMO.Om0, Ob=COSMO.Ob0, OL=COSMO.Ode0, Ok=COSMO.Ok(0.),
+    h100=LITTLEH, Nnu=COSMO.Neff, F=1.14, fDM=0., switch=0, npz=1000, zstart=10000, zend=zaxis[0])\
+    xes[0]=Xe_H[-1]#xe in non HI regions set to zero at first (or recfast)
+    Tks[0]=TM[-1]#Temperature from recfast
+    print('Starting Evolution at z=%.2f, xe=%.2e, Tk=%.2f'%(zaxis[0],xes[0],Tks[0]))
+    for tnum,zval,tval in enumerate(zip(zaxis,taxis)):
+        #first compute the optical depths to higher redshifts
+        for xray_energy in xray_axis:
+            #compute the optical depth to last redshift
+
+
+
+
+
+
 
 #*******************************************
 #Ionization parameters
@@ -47,7 +122,6 @@ def sigma_HeI(ex):
         return 0.
 
 
-
 #*******************************************
 #initialize interpolation x_int_tables
 #*******************************************
@@ -76,27 +150,33 @@ def init_interpolation_tables():
     4.677e-3,1.0e-2,2.318e-2,4.677e-3,1.0e-2,2.318e-2,4.677e-2,1.0e-1,.5,.9,.99,.999])
     for xi,tname in zip(table_names,ionized_fractions):
         itable=np.loadtxt(tname,skiprows=3)
-        SPLINE_DICT[('f_ion',xi)]=interp.interp1d(itable[:,0],itable[:,1])
-        SPLINE_DICT[('f_heat',xi)]=interp.interp1d(itable[:,0],itable[:,2])
-        SPLINE_DICT[('f_exc',xi)]=interp.interp1d(itable[:,0],itable[:,3])
-        SPLINE_DICT[('n_Lya',xi)]=interp.interp1d(itable[:,0],itable[:,4])
-        SPLINE_DICT[('n_{ion,HI}',xi)]=interp.interp1d(itable[:,0],itable[:,5])
-        SPLINE_DICT[('n_{ion,HeI}',xi)]=interp.interp1d(itable[:,0],itable[:,6])
-        SPLINE_DICT[('n_{ion,HeII}',xi)]=interp.interp1d(itable[:,0],itable[:,7])
-        SPLINE_DICT[('shull_heating',xi)]=interp.interp1d(itable[:,0],itable[:,8])
+        SPLINE_DICT[('f_ion',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,1])
+        SPLINE_DICT[('f_heat',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,2])
+        SPLINE_DICT[('f_exc',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,3])
+        SPLINE_DICT[('n_Lya',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,4])
+        SPLINE_DICT[('n_{ion,HI}',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,5])
+        SPLINE_DICT[('n_{ion,HeI}',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,6])
+        SPLINE_DICT[('n_{ion,HeII}',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,7])
+        SPLINE_DICT[('shull_heating',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,8])
+        SPLINE_DICT[('min_e_kev',xi)]=itable[:,0]/1e3.min()
+        PSLINE_DICT[('max_e_kev',xi)]=itable[:,0]/1e3.max()
 
-def interp_heat_val(ex,xi,mode='f_ion'):
+def interp_heat_val(e_kev,xi,mode='f_ion'):
     '''
     get the fraction of photon energy going into ionizations at energy e_kev
     and ionization fraction xi
     Args:
-    ex, energy of X-ray in eV
+    ex, energy of X-ray in keV
     xi, ionized fraction of IGM
     '''
     ind_high=int(np.arange(SPLINE_DICT['xis'].shape[0])[SPLINE_DICT['xis']>=xi].min())
     ind_low=int(np.arange(SPLINE_DICT['xis'].shape[0])[SPLINE_DICT['xis']<xi].max())
     x_l=SPLINE_DICT['xis'][int_low]
     x_h=SPLINE_DICT['xis'][int_high]
+    min_e=np.max([SPLINE_DICT[('min_e_kev',x_l)],SPLINE_DICT[('min_e_kev',x_h)]])
+    max_e=np.min([SPLINE_DICT[('max_e_kev',x_l)],SPLINE_DICT[('max_e_kev',x_h)]])
+    if e_kev<=min_e: e_kev=min_e
+    if e_kev>=max_e: e_kev=max_e
     vhigh=SPLINE_DICT[(mode,x_h)](e_kev)
     vlow=SPLINE_DICT[(mode,x_l)](e_kev)
     a=(v_high-v_low)/(x_h-x_l)
