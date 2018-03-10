@@ -9,7 +9,7 @@ import scipy.integrate as integrate
 from settings import COSMO,TEDDINGTON,MBH_INTERP_MAX,MBH_INTERP_MIN,SPLINE_DICT
 from settings import M_INTERP_MIN,LITTLEH,PI,JY,DH,MP,MSOL
 from settings import N_INTERP_Z,N_INTERP_MBH,Z_INTERP_MAX,Z_INTERP_MIN,ERG
-from settings import M_INTERP_MAX,KPC,YP
+from settings import M_INTERP_MAX,KPC,F_HE,F_H,YP,BARN
 from settings import N_TSTEPS,E_HI_ION,E_HEI_ION,E_HEI_ION,SIGMAT
 from cosmo_utils import massfunc,dict2tuple,tvir2mvir
 import scipy.interpolate as interp
@@ -41,18 +41,18 @@ def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),T4=1.,**kwargs):
     for tnum in range(1,len(qvals)):
         tval,zval=taxis[tnum-1],zaxis[tnum-1]
         crr=2.9*((1.+zval)/6.)**(-1.1)#clumping factor
-        trec=1./(crr*(1+chi)*nH0cm*(1.+zval)**3.*2.6e-13*(T4)**-.7)/1e9/3.15e7# trec in Gyr
-        trec_he=1./((1.+2.*chi)*nH0cm*(1.+zval)**3.*2*2.6e-13*(T4/4)**-.7*crr)/1e9/3.15e7
+        trec=1./(crr*(1+chi)*nH0cm*(1.+zval)**3.*2.6e-13*(T4)**-.7)/1e9/YR# trec in Gyr
+        trec_he=1./((1.+2.*chi)*nH0cm*(1.+zval)**3.*2*2.6e-13*(T4/4)**-.7*crr)/1e9/YR
         #print trec
         #if not(norec):
         if zval>=kwargs['zmin']:
-            qdots[tnum-1]=.9*fesc*ndot_ion(zval,**kwargs)/nH0*1e9*3.15e7-qvals[tnum-1]/trec
-            qdots_he[tnum-1]=.1*fesc*ndot_ion(zval,**kwargs)/nHe0*1e9*3.15e7-qvals_he[tnum-1]/trec_he
+            qdots[tnum-1]=.9*fesc*ndot_ion(zval,**kwargs)/nH0*1e9*YR-qvals[tnum-1]/trec
+            qdots_he[tnum-1]=.1*fesc*ndot_ion(zval,**kwargs)/nHe0*1e9*YR-qvals_he[tnum-1]/trec_he
         else:
             qdots[tnum-1]=-qvals[tnum-1]/trec
             qdots_he[tnum-1]=-qvals_he[tnum-1]/trec_he
         #else:
-        #    qdot=fesc*ndot_ion(zval,**kwargs)/nH0*1e9*3.15e7
+        #    qdot=fesc*ndot_ion(zval,**kwargs)/nH0*1e9*YR
         qvals[tnum]=np.min([1.,qvals[tnum-1]+dt*qdots[tnum-1]])
         qvals_he[tnum]=np.min([1.,qvals_he[tnum-1]+dt*qdots_he[tnum-1]])
         dz=-zaxis[tnum]+zaxis[tnum-1]
@@ -60,7 +60,7 @@ def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),T4=1.,**kwargs):
         dtaus[tnum-1]=DHcm*nH0cm*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
         (qvals[tnum-1]*(1+chi)+qvals_he[tnum-1]*chi)*dz
         taus[tnum]=taus[tnum-1]+dtaus[tnum-1]
-    #print fesc*ndot_ion(zval,**kwargs)*1e9*3.15e7s
+    #print fesc*ndot_ion(zval,**kwargs)*1e9*YRs
     #print nH0
     return zaxis,taxis,qvals,taus,qdots,dtaus
 def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**kwargs):
@@ -116,9 +116,9 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**kwargs):
         for xnum,ex in enumerate(xray_axes[tnum]):
             #compute the optical depth to last redshift using linear approximation
             dtau=dz*(DH*1e3*KPC*1e2)*(1.+zm1)**2./COSMO.Ez(zm1)*(1.-qm1)\
-            *((1.-xem1)*nH0cm*sigma_HLike(ex*1e3,z=1.)\
-            +(1.-xem1)*nHe0cm*sigma_HeI(ex*1e3)\
-            +xem1*nHe0cm*sigma_HLike(ex*1e3,z=2.))
+            *((1.-xem1)*nH0cm*sigma_HLike(ex,z=1.)\
+            +(1.-xem1)*nHe0cm*sigma_HeI(ex)\
+            +xem1*nHe0cm*sigma_HLike(ex,z=2.))
             tau_vals[xnum,:-1]=dtau+np.vectorize(lambda x:\
             taus[zm1](ex*(1.+zval)/(1.+zm1),x))(zaxis[:tnum])
             #valuate tau values at energy ex to all higher redshifts
@@ -139,7 +139,6 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**kwargs):
         print('Computing integrated x-ray fluxes at z=%.2f'%zm1)
         #for xnum,ex in enumerate(xray_axis):
             #I am here!
-
         jx_vals=np.zeros_like(xray_axes[tnum-1])
         for exnum,ex in enumerate(xray_axes[tnum-1]):
             g=lambda x:np.exp(-taus[zm1](ex,x))\
@@ -151,11 +150,33 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**kwargs):
             #convert flux to keV sec^-1/keV/cm^2/Sr
             jx_vals[exnum]=jx_vals[exnum]/EV/1e3
         jx_func=interp.interp1d(np.log(xray_axis),jx_vals)
-        g=lambda x:4.*PI*jx_func(x)\
-        *interp_heat_val(np.exp(x)*1e3,xem1,'f_heat')\
-        *((np.exp(x)*1e3-E_HI_ION)*(1.-xem1)*sigma_HLike(np.exp(x)*1e3)*F_H\
-        +F_HE*(np.exp(x)*1e3-E_HEI_ION)*(1-xem1)*sigma_HeI(np.exp(x)*1e3)\
-        +(1-E_HEII_ION)*xem1*F_HE*sigma_HLike(np.exp(x)*1e3,z=2.))
+        print('Computing integrated X-ray heating rate at z=^.2f'%zm1)
+        g=lambda x:4.*PI*jx_func(np.exp(x))\
+        *interp_heat_val(np.exp(x),xem1,'f_heat')\
+        *((np.exp(x)-E_HI_ION)*(1.-xem1)*sigma_HLike(np.exp(x))*F_H\
+        +F_HE*(np.exp(x)-E_HEI_ION)*(1-xem1)*sigma_HeI(np.exp(x))\
+        +(np.exp(x)-E_HEII_ION)*xem1*F_HE*sigma_HLike(np.exp(x),z=2.))
+        logxmax=np.log(xray_axes[tnum-1].max()
+        eps_x=integrate.quad(g,np.log(kwargs['EX_min']),
+        logxmax)[0]#integrate dJ/dE * dlogE*sigma_heat*E_heat
+        #convert back to Watts
+        eps_x=eps_x*1e3*EV
+        dtdzm1=TH*1e9*YR/(COSMO.Ez(zm1)*(zm1+1))
+        print('Computing integrated X-ray ionization rate at z=%.2f'%zm1)
+        g=lambda x:4.*PI*jx_func(np.exp(x))*ion_sum(np.exp(x),xem1)
+        gamma_ion=integrate.quad(g,np.log(kwargs['EX_min']),logxmax)
+        #integrate dJ/dE * dlogE*sigma_ion
+        print('Stepping xe')
+        alpha_a=4.2e-13*(Tks[tnum-1]/1e4)**-.7
+        dxe=-alpha_a*xem1**2.*nB0cm*(1.+zm1)**3.*F_H\
+        *CRR*dz*dtdzm1
+        dxe=dxe+dz*dtdzm1*gamma_ion
+        print('Stepping T_k')
+        #!!!Ignoring Compton Heating for now.
+        dTK=2.*Tks[tnum-1]/(3.*nB0*(1.+zm1)**3.)*3.*(1.+zm1)**2.*nB0*dz\
+        -Tks[tnum-1]/(1.+xem1)*dxe
+        dTk=dTk+2./(3.*KBOLTZMANN*(1.+xem1))\
+        *eps_x*dz*dtdzm1
 
 
 
@@ -172,11 +193,12 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**kwargs):
 #*******************************************
 #Ionization parameters
 #*******************************************
-def sigma_HLike(ex,z=1.):
+def sigma_HLike(e,z=1.):
     '''
-    gives ionization cross section in cm^2 for an X-ray with energy ex (eV)
+    gives ionization cross section in cm^2 for an X-ray with energy ex (keV)
     for a Hydrogen-like atom with atomic number z
     '''
+    ex=e*1e3 #input energy in keV, convert to eV
     e1=13.6*z**2.
     if ex<e1:
         return 0.
@@ -184,17 +206,18 @@ def sigma_HLike(ex,z=1.):
         eps=np.sqrt(ex/e1-1.)
         return 6.3e-18*(e1/ex)**4.*np.exp(4.-(4.*np.arctan(eps)/eps))/\
         (1-np.exp(-2.*PI/eps))/z/z
-def sigma_HeI(ex):
+def sigma_HeI(e):
     '''
-    gives ionization cross section in cm^2 for X-ray of energy ex (eV)
+    gives ionization cross section in cm^2 for X-ray of energy ex (keV)
     for HeI atom.
     '''
+    ex=e*1e3#input energy is in keV, convert to eV
     if ex>=2.459e1 and ex<=1e4:
         e0,sigma0,ya,p,yw,y0,y1=1.361e1,9.492e2,1.469,3.188,2.039,4.434e-1,2.136
         x=ex/e0-y0
         y=np.sqrt(x**2.+y1*2.)
         fy=((x-1.)**2.+yw**2.)*y**(0.5*p-5.5)*np.sqrt(1.+np.sqrt(y/ya))**(-p)
-        return fy*sigma0
+        return fy*sigma0*BARN*1e6#Last factor converts from Mbarnes to cm^-2
     else:
         return 0.
 
@@ -263,6 +286,11 @@ def interp_heat_val(e_kev,xi,mode='f_ion'):
 
 
 def ion_sum(ex,xe):
+    '''
+    \sum_{i,j}(hnu-E^th_j)*(fion,HI/E^th_j)f_i x_i \sigma_i
+    for hun=ex
+    and ionized IGM fraction xe
+    '''
     e_hi=ex-E_HI_ION
     e_hei=ex-E_HEI_ION
     e_heiii=ex-E_HEII_ION
@@ -282,11 +310,8 @@ def ion_sum(ex,xe):
     +interp_heat_val(e_heii,xe,'n_{ion,HeII}')+1.
     fi_heii=fi_heii*(F_HE*xe*sigma_HLike(ex,z=2.))
 
-def ion_interal(z,xe,**kwargs):
-    g=lambda ex_kev:ion_sum(ex_kev*1e3,xe)*4.*PI*\
-    RB.background_intensity_Xrays(z,kwargs['zmin'],kwargs['zmax'],ex_kev,
-    lambda x,y: emissivity_X_gridded(x,y),
-    )
+    return ri_hi+fi_hei+fi_heii
+
 
 #*******************************************
 #heating and ionization fractions at xi
@@ -651,18 +676,18 @@ def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),YP=0.25,T4=1.,**kwargs):
     for tnum in range(1,len(qvals)):
         tval,zval=taxis[tnum-1],zaxis[tnum-1]
         crr=2.9*((1.+zval)/6.)**(-1.1)#clumping factor
-        trec=1./(crr*(1+chi)*nH0cm*(1.+zval)**3.*2.6e-13*(T4)**-.7)/1e9/3.15e7# trec in Gyr
-        trec_he=1./((1.+2.*chi)*nH0cm*(1.+zval)**3.*2*2.6e-13*(T4/4)**-.7*crr)/1e9/3.15e7
+        trec=1./(crr*(1+chi)*nH0cm*(1.+zval)**3.*2.6e-13*(T4)**-.7)/1e9/YR# trec in Gyr
+        trec_he=1./((1.+2.*chi)*nH0cm*(1.+zval)**3.*2*2.6e-13*(T4/4)**-.7*crr)/1e9/YR
         #print trec
         #if not(norec):
         if zval>=kwargs['zmin']:
-            qdots[tnum-1]=.9*fesc*ndot_ion(zval,**kwargs)/nH0*1e9*3.15e7-qvals[tnum-1]/trec
-            qdots_he[tnum-1]=.1*fesc*ndot_ion(zval,**kwargs)/nHe0*1e9*3.15e7-qvals_he[tnum-1]/trec_he
+            qdots[tnum-1]=.9*fesc*ndot_ion(zval,**kwargs)/nH0*1e9*YR-qvals[tnum-1]/trec
+            qdots_he[tnum-1]=.1*fesc*ndot_ion(zval,**kwargs)/nHe0*1e9*YR-qvals_he[tnum-1]/trec_he
         else:
             qdots[tnum-1]=-qvals[tnum-1]/trec
             qdots_he[tnum-1]=-qvals_he[tnum-1]/trec_he
         #else:
-        #    qdot=fesc*ndot_ion(zval,**kwargs)/nH0*1e9*3.15e7
+        #    qdot=fesc*ndot_ion(zval,**kwargs)/nH0*1e9*YR
         qvals[tnum]=np.min([1.,qvals[tnum-1]+dt*qdots[tnum-1]])
         qvals_he[tnum]=np.min([1.,qvals_he[tnum-1]+dt*qdots_he[tnum-1]])
         dz=-zaxis[tnum]+zaxis[tnum-1]
@@ -670,6 +695,6 @@ def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),YP=0.25,T4=1.,**kwargs):
         dtaus[tnum-1]=DHcm*nH0cm*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
         (qvals[tnum-1]*(1+chi)+qvals_he[tnum-1]*chi)*dz
         taus[tnum]=taus[tnum-1]+dtaus[tnum-1]
-    #print fesc*ndot_ion(zval,**kwargs)*1e9*3.15e7s
+    #print fesc*ndot_ion(zval,**kwargs)*1e9*YRs
     #print nH0
     return zaxis,taxis,qvals,taus,qdots,dtaus
