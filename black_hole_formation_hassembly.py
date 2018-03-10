@@ -177,13 +177,10 @@ def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**kwargs):
         -Tks[tnum-1]/(1.+xem1)*dxe
         dTk=dTk+2./(3.*KBOLTZMANN*(1.+xem1))\
         *eps_x*dz*dtdzm1
-
-
-
-        print('Computing Ionization rate at z=%.2f'%zval)
-        print('Computing Heating rate at z=%.2f'%zval)
+        Tks[tnum]=Tks[tnum-1]+dTk
+        xes[tnum]=xes[tnum-1]+dxe
         print('Tk=%.2f,xe=%.3f'%(Tks[tnum],xes[tnum]))
-
+    return taxis,zaxis,Tks,xes
 
 
 
