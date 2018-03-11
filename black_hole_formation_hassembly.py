@@ -136,18 +136,19 @@ def run_heating(zlow,xe0,Tk0,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**
         for xnum,ex in enumerate(xray_axes[tnum]):
             #iterate through x-ray flux at previous redshift
             #compute the optical depth to last redshift using linear approximation
-            dtau=dz*(DH*1e3*KPC*1e2)*(1.+zval)**2./COSMO.Ez(zval)*(1.-qval)\
+            dtau=-dz*(DH*1e3*KPC*1e2)*(1.+zval)**2./COSMO.Ez(zval)*(1.-(qval+(1-qval)*xe))\
             *((1.-xe)*nH0cm*sigma_HLike(ex,z=1.)\
             +(1.-xe)*nHe0cm*sigma_HeI(ex)\
             +xe*nHe0cm*sigma_HLike(ex,z=2.))
             #print tau_vals[:-1,xnum].shape
             #print zaxis[:tnum].shape
             tau_vals[:-1,xnum]=tau_vals[:-1,xnum]+np.vectorize(lambda x:\
-            tau_function(tnum-1,ex*(1.+zaxis[tnum])/(1.+zval),x))(zaxis[:tnum])+dtau
+            tau_function(tnum-1,ex*(1.+zval)/(1.+zaxis[tnum]),x))(zaxis[:tnum])+dtau
             #tau_vals is a tnum times
             #evaluate tau values at energy ex to all higher redshifts
             #print zaxis[:tnum+1][::-1].shape
             #print tau_vals[:,xnum][::-1].shape
+            np.savez('tau_vals_%d.npz'%(tnum),tau_vals=tau_vals,zaxis=zaxis[:tnum+1],xrays=xray_axes[tnum])
             tau_splines[(tnum,xnum)]=interp.interp1d(zaxis[:tnum+1][::-1],tau_vals[:,xnum][::-1],
             bounds_error=False,fill_value=0.,kind='linear')
         #print tau_splines
@@ -163,8 +164,7 @@ def run_heating(zlow,xe0,Tk0,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**
         for exnum,ex in enumerate(xray_axes[tnum-1]):
             g=lambda x:np.exp(-tau_function(tnum-1,ex,x))\
             *emissivity_X_gridded(x,ex*(1.+x)/(1.+zval),units='keV',**kwargs)\
-            /COSMO.Ez(x)\
-            /(1.+x)
+            /COSMO.Ez(x)/(1.+x)
             jx_vals[exnum]=(1.+zval)**3./4./PI*DH\
             *integrate.quad(g,zval,zaxis[0],epsabs=1e-20)[0]\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.
@@ -240,11 +240,12 @@ def sigma_HeI(e):
     for HeI atom.
     '''
     ex=e*1e3#input energy is in keV, convert to eV
-    if ex>=2.459e1 and ex<=1e4:
+    if ex>=2.459e1:
         e0,sigma0,ya,p,yw,y0,y1=1.361e1,9.492e2,1.469,3.188,2.039,4.434e-1,2.136
         x=ex/e0-y0
-        y=np.sqrt(x**2.+y1*2.)
-        fy=((x-1.)**2.+yw**2.)*y**(0.5*p-5.5)*np.sqrt(1.+np.sqrt(y/ya))**(-p)
+        y=np.sqrt(x**2.+y1**2.)
+        fy=((x-1.)**2.+yw**2.)*y**(0.5*p-5.5)\
+        *np.sqrt(1.+np.sqrt(y/ya))**(-p)
         return fy*sigma0*BARN*1e6#Last factor converts from Mbarnes to cm^-2
     else:
         return 0.

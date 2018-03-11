@@ -62,10 +62,10 @@ def background_intensity_ir(z,emissivity_function,lambda_min=3.2e-6,lambda_max=3
     '''
     calculate the integrated background intensity from lambda_min to lambda_max
     '''
-    freq_min=C/lambda_max
-    freq_max=C/lambda_min
+    freq_min=C*1e3/lambda_max
+    freq_max=C*1e3/lambda_min
     g=lambda x: background_intensity(z,zmin=kwargs['zmin'],zmax=kwargs['zmax'],
-    freq=C/x,emissivity_function=emissivity_function)*C/x**2
+    freq=C*1e3/x,emissivity_function=emissivity_function)*C*1e3/x**2
     return integrate.quad(g,lambda_min,lambda_max)[0]
 
 def integrated_Xrays_2p5(z,zlow,zhigh,emissivity_function,**kwargs):
