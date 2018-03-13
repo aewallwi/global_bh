@@ -101,3 +101,34 @@ def vVir(m,z):
     '''
     return 144.*(COSMO.Om(z)*delta(z)/97.2)**(1./6.)\
     *(m/1e12)**(1./3.)*(1.+z)**.5
+
+def rVir(m,z):
+    '''
+    virial radius (coMpc/h)
+    from Maller and Bullock 2004
+    Args:
+        m,float,mass from halo in msolar/h
+        z,float,redshift
+    Returns:
+        virial radius of DM halo. (coMpc/h)
+    '''
+    return 206.*(COSMO.Om(z)*delta(z)/97.2)**(-1./3.)\
+    *(m/1e12)**(1./3.)*(1.+z)**-1.*1e-3*(1.+z)
+
+
+def nH(m,z):
+    '''
+    Number of Hydrogen atoms in a halo with mass m_h
+    Args:
+    m, float, mass of halo in msolar/h
+    z,float,redshift
+    '''
+    return m*Ob(0.)/Om(0.)*(1.-YP)/MP*MSOL*LITTLEH
+def nHe(m,z):
+    '''
+    Number of Hydrogen atoms in a halo with mass m_h
+    Args:
+    m, float, mass of halo in msolar/h
+    z,float,redshift
+    '''
+    return nH(m,z)*YP/4./(1-YP)

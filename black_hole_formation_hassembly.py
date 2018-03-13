@@ -21,12 +21,12 @@ import radio_background as RB
 import recfast4py.recfast as recfast
 from settings import DEBUG
 
-def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),T4=1.,**kwargs):
+def q_ionize(zlow,zhigh,fesc=1.,norec=False,ntimes=int(1e4),T4=1.,**kwargs):
     '''
     compute ionization fraction by integrating differential equation (Madau 1999)
     '''
     tmax=COSMO.age(np.min([kwargs['zmin'],zlow]))
-    tmin=COSMO.age(kwargs['zmax'])
+    tmin=COSMO.age(np.max([kwargs['zmax'],zhigh]))
     taxis=np.linspace(tmin,tmax,ntimes)#times in Gyr
     dt=taxis[1]-taxis[0]
     zaxis=COSMO.age(taxis,inverse=True)#z axis
@@ -48,7 +48,7 @@ def q_ionize(zlow,fesc=1.,norec=False,ntimes=int(1e4),T4=1.,**kwargs):
         trec_he=1./((1.+2.*chi)*nH0cm*(1.+zval)**3.*2*2.6e-13*(T4/4)**-.7*crr)/1e9/YR
         #print trec
         #if not(norec):
-        if zval>=kwargs['zmin']:
+        if zval>=kwargs['zmin'] and zval<=kwargs['zmax']:
             qdots[tnum-1]=.9*fesc*ndot_ion(zval,**kwargs)/nH0*1e9*YR-qvals[tnum-1]/trec
             qdots_he[tnum-1]=.1*fesc*ndot_ion(zval,**kwargs)/nHe0*1e9*YR-qvals_he[tnum-1]/trec_he
         else:
@@ -77,6 +77,8 @@ def run_heating(zlow,xe0,Tk0,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**
     nB0cm=nH0cm+nHe0cm
     print('Computing HII Evolution')
     zaxis,taxis,qvals,_,_,_=q_ionize(zlow,fesc=fesc,ntimes=ntimes,T4=T4,**kwargs)
+    print zaxis,qvals
+    print zaxis[qvals==1.]
     #for each z in zaxis
     jvals=[]
     #NX=100
@@ -587,16 +589,17 @@ def emissivity_X_gridded(z,ex,units='Watts',**kwargs):
     else:
         pfactor=1.
     if isinstance(ex,float):
-        if ex<=kwargs['EX_min']:
+        if ex<=kwargs['EX_min'] or z>kwargs['zmax'] or z<kwargs['zmin']:
             return 0
         else:
             return SPLINE_DICT[splkey](z)*(ex/kwargs['EX_min'])**\
             (-kwargs['alphaX'])/pfactor
     else:
         output=np.zeros_like(ex)
-        select=ex>=kwargs['EX_min']
-        output[select]=SPLINE_DICT[splkey](z)*(ex[select]/2.)\
-        **(-kwargs['alphaX'])
+        if z<=kwargs['zmax'] and z>=kwargs['zmin']:
+            select=ex>=kwargs['EX_min']
+            output[select]=SPLINE_DICT[splkey](z)*(ex[select]/2.)\
+            **(-kwargs['alphaX'])
         return output/pfactor
 
 
