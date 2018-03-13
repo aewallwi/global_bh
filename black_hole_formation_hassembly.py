@@ -10,8 +10,9 @@ import scipy.integrate as integrate
 from settings import COSMO,TEDDINGTON,MBH_INTERP_MAX,MBH_INTERP_MIN,SPLINE_DICT
 from settings import M_INTERP_MIN,LITTLEH,PI,JY,DH,MP,MSOL,TH,KBOLTZMANN
 from settings import N_INTERP_Z,N_INTERP_MBH,Z_INTERP_MAX,Z_INTERP_MIN,ERG
-from settings import M_INTERP_MAX,KPC,F_HE,F_H,YP,BARN,YR,EV
+from settings import M_INTERP_MAX,KPC,F_HE,F_H,YP,BARN,YR,EV,ERG
 from settings import N_TSTEPS,E_HI_ION,E_HEI_ION,E_HEII_ION,SIGMAT
+from settings import KBOLTZMANN_KEV
 from cosmo_utils import massfunc,dict2tuple,tvir2mvir
 import scipy.interpolate as interp
 import copy
@@ -103,12 +104,12 @@ def run_heating(zlow,xe0,Tk0,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**
     #tau_splines=[{m:lambda x,y:0. for m in range(NX)}]
     #dlogxs=[]
     tau_splines={(0,xnum):lambda x:0. for xnum in range(NX)}#Dictionary for optical depth splines
-    dlogxs=[np.log10(xray_axes[0][1])-np.log10(xray_axes[0][0])]
     def tau_function(znum,ex,zp):
         '''
         temporary function for computing optical depth from zaxis[znum] to zp
         '''
-        exi_l=int((np.log10(ex)-np.log10(kwargs['EX_min']))/dlogxs[znum])
+        dlogx=np.log10(xray_axes[znum][1]/xray_axes[znum][0])
+        exi_l=int((np.log10(ex)-np.log10(xray_axes[znum].min()))/dlogx)
         exi_u=exi_l+1
         if exi_u>=NX:
             return tau_splines[(znum,NX-1)](zp)
@@ -127,11 +128,8 @@ def run_heating(zlow,xe0,Tk0,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**
         qval=qvals[tnum-1]
         xe=xes[tnum-1]
         xi=qval+(1-qval)*xe#ionized fraction from HI and HII regions
-        xray_axes[tnum]=np.logspace(np.log10(kwargs['EX_min']),
-        np.log10(XRAYMAX*(1.+kwargs['zmax'])/\
-        (1.+zval)),NX)#Consider X-ray flux at previous redhift step
-        dlogx=np.log10(xray_axes[tnum][1])-np.log10(xray_axes[tnum][0])
-        dlogxs.append(dlogx)
+        xray_axes[tnum]=xray_axes[tnum-1]*(1.+zval)/(1.+zaxis[tnum])
+        #Consider X-ray flux at previous redhift step
         print('calculating tau values at z=%.2f'%(zaxis[tnum]))
         for xnum,ex in enumerate(xray_axes[tnum]):
             #iterate through x-ray flux at previous redshift
@@ -166,30 +164,31 @@ def run_heating(zlow,xe0,Tk0,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**
             *emissivity_X_gridded(x,ex*(1.+x)/(1.+zval),units='keV',**kwargs)\
             /COSMO.Ez(x)/(1.+x)
             jx_vals[exnum]=(1.+zval)**3./4./PI*DH\
-            *integrate.quad(g,zval,zaxis[0],epsabs=1e-20)[0]\
+            *integrate.quad(g,zval,zaxis.max(),epsabs=1e-20)[0]\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.
-            #gives flux in eV/keV/(cm)^2/Sr
-        np.savetxt('jx_vals_%d.txt'%tnum,np.vstack([xray_axes[tnum-1],
+            #gives flux in keV/keV/(cm)^2/Sr
+        np.savetxt('jx_vals_%d.txt'%(tnum-1),np.vstack([xray_axes[tnum-1],
         jx_vals]).T)
-        jx_func=interp.interp1d(np.log(xray_axes[tnum-1]),jx_vals,fill_value=0.,
+        jx_func=interp.interp1d(xray_axes[tnum-1],jx_vals,fill_value=0.,
         kind='linear',bounds_error=False)
         print('Computing integrated X-ray heating rate per baryon at z=%.2f'%zval)
-        g=lambda x:4.*PI*jx_func(np.exp(x))\
-        *interp_heat_val(np.exp(x),xe,'f_heat')\
-        *((np.exp(x)-E_HI_ION)*(1.-xe)*sigma_HLike(np.exp(x))*F_H\
-        +F_HE*(np.exp(x)-E_HEI_ION)*(1.-xe)*sigma_HeI(np.exp(x))\
-        +(np.exp(x)-E_HEII_ION)*xe*F_HE*sigma_HLike(np.exp(x),z=2.))
+        g=lambda x:heating_integrand(np.exp(x),xe,jx_func)
+        np.savetxt('heating_rate_%d.txt'%(tnum-1),np.vstack([xray_axes[tnum-1],
+        np.vectorize(lambda x:heating_integrand(x,xe,
+        jx_func)/x)(xray_axes[tnum-1])]).T)
         logxmax=np.log(xray_axes[tnum-1].max())
-        eps_x=integrate.quad(g,np.log(kwargs['EX_min']),logxmax,epsabs=1e-20)
+        logxmin=np.log(xray_axes[tnum-1].min())
+        eps_x=integrate.quad(g,logxmin,logxmax,epsabs=1e-25)
         print('eps_X='+str(eps_x))
         eps_x=eps_x[0]
         #integrate dJ/dE * dlogE*sigma_heat*E_heat
         print('eps_X=%.2e'%eps_x)
         dtdz=-TH*1e9*YR/(COSMO.Ez(zval)*(zval+1))
-        print('dtdz=%.2e'%dtdz)
+        dt=dtdz*dz
+        print('dt=%.2e'%dtdz)
         print('Computing integrated X-ray ionization rate at z=%.2f'%zval)
-        g=lambda x:4.*PI*jx_func(np.exp(x))*ion_sum(np.exp(x),xe)
-        gamma_ion=integrate.quad(g,np.log(kwargs['EX_min']),logxmax)[0]
+        g=lambda x:ionization_integrand(np.exp(x),xe,jx_func)
+        gamma_ion=integrate.quad(g,logxmin,logxmax,epsabs=1e-25)[0]
         print('gamma_ion=%.2e'%gamma_ion)
         #integrate dJ/dE * dlogE*sigma_ion
         crr=27.466*np.exp(-0.114*zval+0.001328*zval**2.)
@@ -197,20 +196,20 @@ def run_heating(zlow,xe0,Tk0,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**
         alpha_a=4.2e-13*(Tks[tnum-1]/1e4)**-.7
         print('f_H=%.2f'%F_H)
         dxe=(gamma_ion-alpha_a*xe**2.*nB0cm*(1.+zval)**3.*F_H\
-        *crr)*dtdz*dz
+        *crr)*dt
         #print('dxe_recomb=%.2e'%dxe_recomb)
         print('dxe=%.2e'%dxe)
         print('Stepping T_k')
         #!!!Ignoring Compton Heating for now.
         dTk1=2.*Tks[tnum-1]/(3.*(1.+zval)**3.)*3.*(1.+zval)**2.*dz
         dTk2=-Tks[tnum-1]/(1.+xe)*dxe
-        dTk3=2.*EV*1e3/(3.*KBOLTZMANN*(1.+xe))*eps_x*dz*dtdz
+        dTk3=2./(3.*KBOLTZMANN_KEV*(1.+xe))*eps_x*dt
         print('dTk1=%.2e,dTk2=%.2e,dTk3=%.2e'%(dTk1,dTk2,dTk3))
         dTk=dTk1+dTk2+dTk3
         Tks[tnum]=Tks[tnum-1]+dTk
         xes[tnum]=xes[tnum-1]+dxe
         print('Tk=%.2f,xe=%.1e'%(Tks[tnum],xes[tnum]))
-    return taxis,zaxis,Tks,xes
+    return taxis,zaxis,Tks,xes,qvals
 
 
 
@@ -276,8 +275,7 @@ def init_interpolation_tables():
                    'x_int_tables/xi_0.999.dat']
 
     SPLINE_DICT['xis']=np.array([1e-4,2.318e-4,4.677e-4,1.0e-3,2.318e-3,
-    4.677e-3,1.0e-2,2.318e-2,4.677e-3,1.0e-2,2.318e-2,
-    4.677e-2,1.0e-1,.5,.9,.99,.999])
+    4.677e-3,1.0e-2,2.318e-2,4.677e-2,1.0e-1,.5,.9,.99,.999])
     for tname,xi in zip(table_names,SPLINE_DICT['xis']):
         dirname,filename=os.path.split(os.path.abspath(__file__))
         itable=np.loadtxt(dirname+'/'+tname,skiprows=3)
@@ -342,55 +340,24 @@ def ion_sum(ex,xe):
     e_heii=ex-E_HEII_ION
 
     fi_hi=interp_heat_val(e_hi,xe,'n_{ion,HI}')\
-    +interp_heat_val(e_hei,xe,'n_{ion,HeI}')\
-    +interp_heat_val(e_heii,xe,'n_{ion,HeII}')+1.
+    +interp_heat_val(e_hi,xe,'n_{ion,HeI}')\
+    +interp_heat_val(e_hi,xe,'n_{ion,HeII}')+1.
     fi_hi=fi_hi*(F_H*(1-xe))*sigma_HLike(ex)
 
     fi_hei=interp_heat_val(e_hei,xe,'n_{ion,HI}')\
     +interp_heat_val(e_hei,xe,'n_{ion,HeI}')\
-    +interp_heat_val(e_heii,xe,'n_{ion,HeII}')+1.
+    +interp_heat_val(e_hei,xe,'n_{ion,HeII}')+1.
     fi_hei=fi_hei*(F_HE*(1-xe))*sigma_HeI(ex)
 
     fi_heii=interp_heat_val(e_heii,xe,'n_{ion,HI}')\
-    +interp_heat_val(e_hei,xe,'n_{ion,HeI}')\
+    +interp_heat_val(e_heii,xe,'n_{ion,HeI}')\
     +interp_heat_val(e_heii,xe,'n_{ion,HeII}')+1.
     fi_heii=fi_heii*(F_HE*xe*sigma_HLike(ex,z=2.))
 
     return fi_hi+fi_hei+fi_heii
 
 
-#*******************************************
-#heating and ionization fractions at xi
-#*******************************************
-def f_heat(xi):
-    splkey=('f_heat')
-    if not SPLINE_DICT.has_key(splkey):
-        xiv=np.array([0.,.0001,.00023,.00047,.001,.0023,
-        .0047,.01,.023,.047,.1,.5,.9,.99,.999,1.])
-        f_heat=np.array([.126,.126,.138,.153,.176,.212,.255,
-        .319,.418,.528,.668,.922,.973,.979,.979,.979])
 
-def f_ion(xi):
-    splkey=('f_ion')
-    if not SPLINE_DICT.has_key(splkey):
-        xiv=np.array([0.,.0001,.00023,.00047,.001,.0023,
-        .0047,.01,.023,.047,.1,.5,.9,.99,.999,1.])
-        fions=np.array([.394,.394,.392,.389,.384,.371,.355,.329,
-        .283,.232,.165,.0446,.0229,.0209,.0207,.0207])
-        SPLINE_DICT[splkey]=interp.interp1d(xiv,fions)
-    return SPLINE_DICT[splkey](xi)
-
-
-def f_lya(xi):
-    splkey=('f_lya')
-    if not SPLINE_DICT.has_key(splkey):
-        xiv=np.array([0.,.0001,.00023,.00047,.001,.0023,
-        .0047,.01,.023,.047,.1,.5,.9,.99,.999,1.])
-        flyas=np.array([.376,.376,.369,.360,.347,.330,
-        .310,.281,.239,.193,.134,.0266,.00323,
-        .000284,.0000303,.0000303])
-        SPLINE_DICT[splkey]=interp.interp1d(xiv,flyas)
-    return SPLINE_DICT[splkey](xi)
 #*****************************************
 #Functions for computing radio luminosity
 #*****************************************
@@ -398,9 +365,10 @@ def radio_luminosity_fp_5ghz_merloni03(mbh,**kwargs):
     lx=0.3*1.26e38*kwargs['fedd']*kwargs['fduty']*mbh
     l5ghz=10.**(7.33+0.78*np.log10(mbh)+0.6*np.log10(lx))/5e9
     return l5ghz*ERG
-def x_ray_luminosity_2kev_wang06(mbh,**kwargs):
+def x_ray_luminosity_wang06(mbh,ex,**kwargs):
     '''
-    2 keV luminosity in Watts keV^-1
+    luminosity in Watts keV^-1
+    at keV
     '''
     m=mbh/LITTLEH#convert from msolar/h units to msolar
     #mean logarithm of Lx/Ledd
@@ -411,9 +379,11 @@ def x_ray_luminosity_2kev_wang06(mbh,**kwargs):
     fx=np.exp(mux+.5*(sigmax)**2.)*kwargs['fedd']
     lxp1_2p4=fx*m*1.26e31#luminosity from .1 to 2.4 keV in Watts
     l0e0alpha=(1.-kwargs['alphaX'])*lxp1_2p4\
-    /((2.4)**(1.-kwargs['alphaX'])-(np.max([.1,kwargs['EX_min']]))**(1.-kwargs['alphaX']))
-    return l0e0alpha*2.**(-kwargs['alphaX'])#returns Watts/keV at 2 keV
-
+    /((2.4)**(1.-kwargs['alphaX'])-(.1)**(1.-kwargs['alphaX']))
+    if ex>=kwargs['EX_min']:
+        return l0e0alpha*ex**(-kwargs['alphaX'])#returns Watts/keV at 2 keV
+    else:
+        return 0.
 
 def radio_luminosity_fp_5ghz_wang06(mbh,**kwargs):
     #mean logarithm of Lx/Ledd
@@ -563,8 +533,30 @@ def emissivity_gridded(z,freq,**kwargs):
         zv=np.linspace(zv.min(),zv.max(),N_INTERP_Z)#[1:-1]
         emz=tfunc(np.hstack([t.min(),COSMO.age(zv[1:-1]),t.max()]))
 
-        SPLINE_DICT[splkey]=interp.interp1d(zv,emz)
+        SPLINE_DICT[splkey]=interp.interp1d(zv,emz,fill_value=0.,
+        bounds_error=False)#set emissivity outside of zlow and zhigh to be 0.
     return SPLINE_DICT[splkey](z)*(freq/5e9)**kwargs['radioind']
+
+def heating_integrand(ex,xe,jxf):
+    pfactor=4.*PI*jxf(ex)
+
+    ex_hi=np.max([ex-E_HI_ION,0.])
+    ex_hei=np.max([ex-E_HEI_ION,0.])
+    ex_heii=np.max([ex-E_HEII_ION,0.])
+
+    hi_rate=ex_hi*(1.-xe)*sigma_HLike(ex)*F_H\
+    *interp_heat_val(ex_hi,xe,'f_heat')
+    hei_rate=ex_hei*(1.-xe)*sigma_HeI(ex)*F_HE\
+    *interp_heat_val(ex_hei,xe,'f_heat')
+    heii_rate=ex_heii*xe*sigma_HLike(ex,z=2.)*F_HE\
+    *interp_heat_val(ex_heii,xe,'f_heat')
+
+    return pfactor*(hi_rate+hei_rate+heii_rate)
+
+def ionization_integrand(ex,xe,jxf):
+    pfactor = 4.*PI*jxf(ex)
+    return pfactor*ion_sum(ex,xe)
+
 
 def emissivity_X_gridded(z,ex,units='Watts',**kwargs):
     '''
@@ -579,14 +571,15 @@ def emissivity_X_gridded(z,ex,units='Watts',**kwargs):
     splkey=('emissivity_X','gridded')+dict2tuple(kwargs)
     if not SPLINE_DICT.has_key(splkey):
         t,zv,m,n_bh,_,_=dnbh_grid(**kwargs)#get grid of black hole masses as a function
-        lx=x_ray_luminosity_2kev_wang06(m,**kwargs)
+        lx=x_ray_luminosity_wang06(m,kwargs['EX_min'],**kwargs)
         dlogm=np.log(m[0,1])-np.log(m[0,0])
         emissivities=(n_bh*lx\
         *dlogm/np.log(10.)).sum(axis=1)*kwargs['fduty']#total 2keV emissivity
         tfunc=interp.interp1d(t,emissivities)
         zv=np.linspace(zv.min(),zv.max(),N_INTERP_Z)#[1:-1]
         emz=tfunc(np.hstack([t.min(),COSMO.age(zv[1:-1]),t.max()]))
-        SPLINE_DICT[splkey]=interp.interp1d(zv,emz)
+        SPLINE_DICT[splkey]=interp.interp1d(zv,emz,
+        fill_value=0.,bounds_error=False)
     if units=='eV':
         pfactor=EV
     elif units=='keV':
@@ -597,11 +590,13 @@ def emissivity_X_gridded(z,ex,units='Watts',**kwargs):
         if ex<=kwargs['EX_min']:
             return 0
         else:
-            return SPLINE_DICT[splkey](z)*(ex/2.)**(-kwargs['alphaX'])/pfactor
+            return SPLINE_DICT[splkey](z)*(ex/kwargs['EX_min'])**\
+            (-kwargs['alphaX'])/pfactor
     else:
         output=np.zeros_like(ex)
         select=ex>=kwargs['EX_min']
-        output[select]=SPLINE_DICT[splkey](z)*(ex[select]/2.)**(-kwargs['alphaX'])
+        output[select]=SPLINE_DICT[splkey](z)*(ex[select]/2.)\
+        **(-kwargs['alphaX'])
         return output/pfactor
 
 

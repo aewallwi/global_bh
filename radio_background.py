@@ -1,5 +1,6 @@
 import numpy as np
-from settings import COSMO,C,KBOLTZMANN,KPC,LITTLEH,Z_INTERP_MAX,DH,PI,SPLINE_DICT
+from settings import COSMO,C,KBOLTZMANN,KPC,LITTLEH
+from settings import DH,PI,SPLINE_DICT,ERG,HPLANCK_KEV
 #from settings import ERG, HPLANCK_KS
 import scipy.integrate as integrate
 from cosmo_utils import dict2tuple
@@ -47,7 +48,7 @@ tau_function=lambda x,y:0.,freq_unit='keV',energy_unit='erg',area_unit='sqcm',sa
     output=output*DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.*(1.+z)**3.
     #This gives Watts/m^2/keV
     if freq_unit=='Hz':#convert from keV^-1 to Hz^-1
-        output=output*HPLANCK_KS
+        output=output*HPLANCK_KEV
     if energy_unit=='erg':#convert from J to erg
         output=output/ERG
     if area_unit=='sqcm':
