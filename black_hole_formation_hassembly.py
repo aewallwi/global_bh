@@ -379,6 +379,7 @@ def x_ray_luminosity_wang06(mbh,ex,**kwargs):
     #std of logarithm of Lx/Ledd (from Wang 2006)
     sigmax=np.log(10.)*kwargs['sigma_loglxf']
     fx=np.exp(mux+.5*(sigmax)**2.)*kwargs['fedd']
+    #print 'fx=%.2e'%fx
     lxp1_2p4=fx*m*1.26e31#luminosity from .1 to 2.4 keV in Watts
     l0e0alpha=(1.-kwargs['alphaX'])*lxp1_2p4\
     /((2.4)**(1.-kwargs['alphaX'])-(.1)**(1.-kwargs['alphaX']))

@@ -20,11 +20,14 @@ def background_intensity(z,zmin,zmax,freq,emissivity_function):
         Specific Intensity of background radiation at frequency freq in Watts/
         Hz/m^2
     '''
-    g = lambda x: emissivity_function(x,freq*(1+x)/(1+z))\
-    /(1.+x)/COSMO.Ez(x)
-    output=integrate.quad(g,max([z,zmin]),zmax)[0]
-    output=output*DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.*(1.+z)**3.
-    return output
+    if z<=zmax:
+        g = lambda x: emissivity_function(x,freq*(1+x)/(1+z))\
+        /(1.+x)/COSMO.Ez(x)
+        output=integrate.quad(g,max([z,zmin]),zmax)[0]
+        output=output*DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.*(1.+z)**3.
+        return output
+    else:
+        return 0.
 
 def background_intensity_Xrays(z,zmin,zmax,ex,emissivity_function,
 tau_function=lambda x,y:0.,freq_unit='keV',energy_unit='erg',area_unit='sqcm',saunit='sr'):
@@ -42,22 +45,25 @@ tau_function=lambda x,y:0.,freq_unit='keV',energy_unit='erg',area_unit='sqcm',sa
         Specific Intensity of background radiation at frequency freq in Watts/
         Hz/m^2/sr
     '''
-    g = lambda x: emissivity_function(x,ex*(1+x)/(1+z))\
-    /(1.+x)/COSMO.Ez(x)
-    output=integrate.quad(g,zmin,zmax)[0]
-    output=output*DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.*(1.+z)**3.
-    #This gives Watts/m^2/keV
-    if freq_unit=='Hz':#convert from keV^-1 to Hz^-1
-        output=output*HPLANCK_KEV
-    if energy_unit=='erg':#convert from J to erg
-        output=output/ERG
-    if area_unit=='sqcm':
-        output=output*1e-4 #convert form m^-2 to cm^-2
-    elif area_unit=='sqMpc':
-        output=output*(1e3*KPC)**2.
-    if saunit=='sqdeg':
-        output=output*(PI/180.)**2.
-    return output
+    if z<=zmax:
+        g = lambda x: emissivity_function(x,ex*(1+x)/(1+z))\
+        /(1.+x)/COSMO.Ez(x)
+        output=integrate.quad(g,zmin,zmax)[0]
+        output=output*DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.*(1.+z)**3.
+        #This gives Watts/m^2/keV
+        if freq_unit=='Hz':#convert from keV^-1 to Hz^-1
+            output=output*HPLANCK_KEV
+        if energy_unit=='erg':#convert from J to erg
+            output=output/ERG
+        if area_unit=='sqcm':
+            output=output*1e-4 #convert form m^-2 to cm^-2
+        elif area_unit=='sqMpc':
+            output=output*(1e3*KPC)**2.
+        if saunit=='sqdeg':
+            output=output*(PI/180.)**2.
+        return output
+    else:
+        return 0.
 
 def background_intensity_ir(z,emissivity_function,lambda_min=3.2e-6,lambda_max=3.9e-6,**kwargs):
     '''
