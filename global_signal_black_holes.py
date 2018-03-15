@@ -221,6 +221,16 @@ def brightness_temperature(z,freq,**kwargs):
     return background_intensity(z,freq,mode='radio',**kwargs)*(C*1e3/freq)**2.\
     /2./KBOLTZMANN
 
+def ndot_uv(z,E_low=13.6,E_high=np.infty):
+    '''
+    number of photons per second per (h/Mpc) at redshift z
+    emitted between E_low and E_high
+    Args:
+        z, redshift
+        E_low, lower photon energy (eV)
+        E_high, higher photon energy (eV)
+    '''
+    return (emissivity_uv(elow)-emissivity_uv(ehigh))/(1.7)
 
 #******************************************************************************
 #Simulation functions

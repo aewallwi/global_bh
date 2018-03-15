@@ -37,7 +37,7 @@ def q_ionize(zlow,zhigh,fesc=1.,norec=False,ntimes=int(1e4),T4=1.,**kwargs):
     dtaus=np.zeros_like(taxis)
     taus=np.zeros_like(qvals)
     nH0=(1.-YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in coMpc^-3
-    nH0cm=nH0/(1e3*KPC*1e2)**3.*LITTLEH**3.#hydrogen density at z=0 in cm^-3
+    nH0cm=nH0/(1e3*KPC*1e2)**3./LITTLEH**3.#hydrogen density at z=0 in cm^-3
     chi=YP/4./(1.-YP)
     nHe0cm=chi*nH0cm
     nHe0=chi*nH0
@@ -48,7 +48,7 @@ def q_ionize(zlow,zhigh,fesc=1.,norec=False,ntimes=int(1e4),T4=1.,**kwargs):
         trec_he=1./((1.+2.*chi)*nH0cm*(1.+zval)**3.*2*2.6e-13*(T4/4)**-.7*crr)/1e9/YR
         #print trec
         #if not(norec):
-        if zval>=kwargs['zmin']: #and zval<=kwargs['zmax']:
+        if zval>=kwargs['zmin'] and zval<=kwargs['zmax']:
             qdots[tnum-1]=.9*fesc*ndot_ion(zval,**kwargs)/nH0*1e9*YR-qvals[tnum-1]/trec
             qdots_he[tnum-1]=.1*fesc*ndot_ion(zval,**kwargs)/nHe0*1e9*YR-qvals_he[tnum-1]/trec_he
         else:
@@ -581,8 +581,8 @@ def emissivity_X_gridded(z,ex,units='Watts',**kwargs):
         tfunc=interp.interp1d(t,emissivities)
         zv=np.linspace(zv.min(),zv.max(),N_INTERP_Z)#[1:-1]
         emz=tfunc(np.hstack([t.min(),COSMO.age(zv[1:-1]),t.max()]))
-        SPLINE_DICT[splkey]=interp.interp1d(zv,emz)#,
-        #fill_value=0.,bounds_error=False)
+        SPLINE_DICT[splkey]=interp.interp1d(zv,emz,
+        fill_value=0.,bounds_error=False)
     if units=='eV':
         pfactor=EV
     elif units=='keV':

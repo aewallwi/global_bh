@@ -10,7 +10,7 @@ import scipy.integrate as integrate
 from settings import COSMO,TEDDINGTON,MBH_INTERP_MAX,MBH_INTERP_MIN,SPLINE_DICT
 from settings import M_INTERP_MIN,LITTLEH,PI,JY,DH,MP,MSOL,TH,KBOLTZMANN
 from settings import N_INTERP_Z,N_INTERP_MBH,Z_INTERP_MAX,Z_INTERP_MIN,ERG
-from settings import M_INTERP_MAX,KPC,F_HE,F_H,YP,BARN,YR,EV,ERG
+from settings import M_INTERP_MAX,KPC,F_HE,F_H,YP,BARN,YR,EV,ERG,C
 from settings import N_TSTEPS,E_HI_ION,E_HEI_ION,E_HEII_ION,SIGMAT
 from settings import KBOLTZMANN_KEV
 from cosmo_utils import massfunc,dict2tuple,tvir2mvir
