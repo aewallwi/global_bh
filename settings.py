@@ -30,6 +30,7 @@ M_INTERP_MAX=17.
 N_INTERP_M=100
 N_TSTEPS=1000
 JY=1e-26
+LEDD=1.26e31#Eddington luminosity in Watts/Msolar
 E_HI_ION=13.6/1e3#keV
 E_HEII_ION=4.*E_HI_ION/1e3#keV
 E_HEI_ION=24.7/1e3#keV
