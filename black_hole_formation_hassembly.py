@@ -36,8 +36,8 @@ def q_ionize(zlow,zhigh,fesc=1.,norec=False,ntimes=int(1e4),T4=1.,**kwargs):
     qdots_he=np.zeros_like(taxis)
     dtaus=np.zeros_like(taxis)
     taus=np.zeros_like(qvals)
-    nH0=(1.-YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in coMpc^-3
-    nH0cm=nH0/(1e3*KPC*1e2)**3./LITTLEH**3.#hydrogen density at z=0 in cm^-3
+    nH0=(1.-YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP/LITTLEH#hydrogen number density at z=0 in coMpc^-3
+    nH0cm=nH0/(1e3*KPC*1e2)**3.*LITTLEH**3.#hydrogen density at z=0 in cm^-3
     chi=YP/4./(1.-YP)
     nHe0cm=chi*nH0cm
     nHe0=chi*nH0

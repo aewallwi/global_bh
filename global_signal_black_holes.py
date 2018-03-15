@@ -138,10 +138,13 @@ def emissivity_radio(z,freq,**kwargs):
         freq, co-moving frequency
         kwargs, model dictionary parameters
     '''
-    return 1.0e22*(kwargs['F_R']/250.)*(kwargs['F_X']/2e-2)**0.86\
-    *(rho_bh(z,**kwargs)/1e4)*(freq/1.4e9)**(-kwargs['ALPHA_R'])\
-    *((2.4**(1.-kwargs['ALPHA_X'])-0.1**(1.-kwargs['ALPHA_X']))/\
-    (10.**(1.-kwargs['ALPHA_X']-2.**(1.-kwargs['ALPHA_X']))))
+    if z<=kwargs['zmax'] and z>=kwargs['zmin']:
+        return 1.0e22*(kwargs['F_R']/250.)*(kwargs['F_X']/2e-2)**0.86\
+        *(rho_bh(z,**kwargs)/1e4)*(freq/1.4e9)**(-kwargs['ALPHA_R'])\
+        *((2.4**(1.-kwargs['ALPHA_X'])-0.1**(1.-kwargs['ALPHA_X']))/\
+        (10.**(1.-kwargs['ALPHA_X']-2.**(1.-kwargs['ALPHA_X']))))
+    else:
+        return 0.
 
 def emissivity_xrays(z,E_x,**kwargs):
     '''
@@ -152,11 +155,14 @@ def emissivity_xrays(z,E_x,**kwargs):
         E_x, x-ray energy (keV)
         kwargs, model parameters dictionary
     '''
-    return 2.322e48*(kwargs['F_X']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
-    *(rho_bh(z,**kwargs)/1e4)*(1.-kwargs['ALPHA_X'])\
-    /(10.**(1.-kwargs['ALPHA_X'])-2.**(1.-kwargs['ALPHA_X']))\
-    *np.exp(-10.**kwargs['LOG10_N']*(F_H*sigma_HLike(E_x)\
-    +F_HE*sigma_HeI(E_x)))
+    if z<=kwargs['zmax'] and z>=kwargs['zmin']:
+        return 2.322e48*(kwargs['F_X']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
+        *(rho_bh(z,**kwargs)/1e4)*(1.-kwargs['ALPHA_X'])\
+        /(10.**(1.-kwargs['ALPHA_X'])-2.**(1.-kwargs['ALPHA_X']))\
+        *np.exp(-10.**kwargs['LOG10_N']*(F_H*sigma_HLike(E_x)\
+        +F_HE*sigma_HeI(E_x)))
+    else:
+        return 0.
 
 def emissivity_uv(z,E_uv,**kwargs):
     '''
@@ -167,4 +173,72 @@ def emissivity_uv(z,E_uv,**kwargs):
         E_uv, energy of uv photon (eV)
         kwargs, model parameter dictionary
     '''
-    
+    power_select=np.sqrt(np.sign(E_uv-13.6),dtype=complex)
+    return 3.5e3*emissivity_xrays(z,2.,**kwargs)*(2500./912.)**(-.61)\
+    *(E_uv/13.6)**(-0.61*np.imag(alpha_select)-1.71*(np.real(power_select)))\
+    *kwargs['F_ESC']
+
+
+
+def background_intensity(z,x,mode='radio',**kwargs):
+    '''
+    background intensity from accreting black holes in
+    radio, x-rays, or uv
+    Args:
+        z, redshift
+        x, frequency (radio), energy (eV) (uv), energy (keV) (xrays)
+        mode, 'radio', 'uv', or 'xrays'
+    Returns:
+        radio: W/m^2/Hz/Sr
+        uv: ev/sec/cm^2/ev/Sr
+        xrays: kev/sec/cm^2/kev/sr
+
+    '''
+    if z<=kwargs['zmax']:
+        if mode=='radio':
+            area_factor=1.
+            emissivity_function=emissivity_radio
+        elif: mode=='uv':
+            area_factor=1e4
+            emissivity_function=emissivity_uv
+        elif: mode=='xrays':
+            area_factor=1e4
+            emissivity_function=emissivity_xrays
+        g=lambda zp:emissivity_function(zp,x*(1+zp)/(1.+z))/(1.+zp)/COSMO.Ez(zp)
+        return DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.*(1.+z)**3./area_factor\
+        *integrate.quad(g,z,kwargs['zmax'])[0]
+    else:
+        return 0.
+
+def brightness_temperature(z,freq,**kwargs):
+    '''
+    background brightness temperature at frequency freq
+    in radio (Kelvin)
+    Args:
+        z, observation redshift
+        freq, radiation frequency (Hz)
+    '''
+    return background_intensity(z,freq,mode='radio',**kwargs)*(C*1e3/freq)**2.\
+    /2./KBOLTZMANN
+
+
+#******************************************************************************
+#Simulation functions
+#******************************************************************************
+def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
+    '''
+    Compute the HII filling fraction over ntimes different
+    redshifts between zlow and zhigh
+    Args:
+        zlow, minimum redshift to evolve calculatino to
+        zhigh, maximum redshift to start calculation
+        ntimes, number of time (redshift) steps
+        T4, temperature of ionized regions
+        kwargs, model parameters
+    '''
+    tmax=COSMO.age(zlow)
+    tmin=COSMO.age(zhigh)
+    taxis=np.linspace(tmin,tmax,ntimes)
+    dt=taxis[1]-taxis[0]
+    zaxis=COSMO.age(tmin,tmax,ntimes)
+    qvals=np.zeros_like(taxis)

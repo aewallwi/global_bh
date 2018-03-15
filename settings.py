@@ -44,3 +44,7 @@ F_H=(1.-YP)/(1.-.75*YP)
 YR=3.15e7#1 year in seconds
 DEBUG=True
 KBOLTZMANN_KEV=KBOLTZMANN/(EV*1e3)#Boltzmann constant in keV
+NH0=COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP*(1.-YP)/LITTLEH
+NH0_CM=NH0/(1e5*KPC)**3.*LITTLEH**3.
+NHE0=NH0*YP/4./(1.-YP)
+NHE0_CM=NH0*YP/4./(1.-YP)

@@ -132,3 +132,142 @@ def nHe(m,z):
     z,float,redshift
     '''
     return nH(m,z)*YP/4./(1-YP)
+
+#*******************************************
+#Ionization parameters
+#*******************************************
+def sigma_HLike(e,z=1.):
+    '''
+    gives ionization cross section in cm^2 for an X-ray with energy ex (keV)
+    for a Hydrogen-like atom with atomic number z
+    '''
+    ex=e*1e3 #input energy in keV, convert to eV
+    e1=13.6*z**2.
+    if ex<e1:
+        return 0.
+    else:
+        eps=np.sqrt(ex/e1-1.)
+        return 6.3e-18*(e1/ex)**4.*np.exp(4.-(4.*np.arctan(eps)/eps))/\
+        (1-np.exp(-2.*PI/eps))/z/z
+def sigma_HeI(e):
+    '''
+    gives ionization cross section in cm^2 for X-ray of energy ex (keV)
+    for HeI atom.
+    '''
+    ex=e*1e3#input energy is in keV, convert to eV
+    if ex>=2.459e1:
+        e0,sigma0,ya,p,yw,y0,y1=1.361e1,9.492e2,1.469,3.188,2.039,4.434e-1,2.136
+        x=ex/e0-y0
+        y=np.sqrt(x**2.+y1**2.)
+        fy=((x-1.)**2.+yw**2.)*y**(0.5*p-5.5)\
+        *np.sqrt(1.+np.sqrt(y/ya))**(-p)
+        return fy*sigma0*BARN*1e6#Last factor converts from Mbarnes to cm^-2
+    else:
+        return 0.
+
+
+#*******************************************
+#initialize interpolation x_int_tables
+#*******************************************
+def init_interpolation_tables():
+    '''
+    Initialize interpolation tables for number of ionizing electrons produced
+    per ionization of H, He, HI, fraction of energy deposited in heating and
+    fraction deposited in ionization.
+    '''
+    table_names=['x_int_tables/log_xi_-4.0.dat',
+                   'x_int_tables/log_xi_-3.6.dat',
+                   'x_int_tables/log_xi_-3.3.dat',
+                   'x_int_tables/log_xi_-3.0.dat',
+                   'x_int_tables/log_xi_-2.6.dat',
+                   'x_int_tables/log_xi_-2.3.dat',
+                   'x_int_tables/log_xi_-2.0.dat',
+                   'x_int_tables/log_xi_-1.6.dat',
+                   'x_int_tables/log_xi_-1.3.dat',
+                   'x_int_tables/log_xi_-1.0.dat',
+                   'x_int_tables/xi_0.500.dat',
+                   'x_int_tables/xi_0.900.dat',
+                   'x_int_tables/xi_0.990.dat',
+                   'x_int_tables/xi_0.999.dat']
+
+    SPLINE_DICT['xis']=np.array([1e-4,2.318e-4,4.677e-4,1.0e-3,2.318e-3,
+    4.677e-3,1.0e-2,2.318e-2,4.677e-2,1.0e-1,.5,.9,.99,.999])
+    for tname,xi in zip(table_names,SPLINE_DICT['xis']):
+        dirname,filename=os.path.split(os.path.abspath(__file__))
+        itable=np.loadtxt(dirname+'/'+tname,skiprows=3)
+        SPLINE_DICT[('f_ion',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,1])
+        SPLINE_DICT[('f_heat',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,2])
+        SPLINE_DICT[('f_exc',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,3])
+        SPLINE_DICT[('n_Lya',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,4])
+        SPLINE_DICT[('n_{ion,HI}',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,5])
+        SPLINE_DICT[('n_{ion,HeI}',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,6])
+        SPLINE_DICT[('n_{ion,HeII}',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,7])
+        SPLINE_DICT[('shull_heating',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,8])
+        SPLINE_DICT[('min_e_kev',xi)]=(itable[:,0]/1e3).min()
+        SPLINE_DICT[('max_e_kev',xi)]=(itable[:,0]/1e3).max()
+
+def interp_heat_val(e_kev,xi,mode='f_ion'):
+    '''
+    get the fraction of photon energy going into ionizations at energy e_kev
+    and ionization fraction xi
+    Args:
+    ex, energy of X-ray in keV
+    xi, ionized fraction of IGM
+    '''
+    if xi>SPLINE_DICT['xis'].min() and xi<SPLINE_DICT['xis'].max():
+        ind_high=int(np.arange(SPLINE_DICT['xis'].shape[0])[SPLINE_DICT['xis']>=xi].min())
+        ind_low=int(np.arange(SPLINE_DICT['xis'].shape[0])[SPLINE_DICT['xis']<xi].max())
+
+        x_l=SPLINE_DICT['xis'][ind_low]
+        x_h=SPLINE_DICT['xis'][ind_high]
+        min_e=np.max([SPLINE_DICT[('min_e_kev',x_l)],SPLINE_DICT[('min_e_kev',x_h)]])
+        max_e=np.min([SPLINE_DICT[('max_e_kev',x_l)],SPLINE_DICT[('max_e_kev',x_h)]])
+        if e_kev<=min_e: e_kev=min_e
+        if e_kev>=max_e: e_kev=max_e
+        vhigh=SPLINE_DICT[(mode,x_h)](e_kev)
+        vlow=SPLINE_DICT[(mode,x_l)](e_kev)
+        a=(vhigh-vlow)/(x_h-x_l)
+        b=vhigh-a*x_h
+        return b+a*xi #linearly interpolate between xi values.
+    elif xi<=SPLINE_DICT['xis'].min():
+        xi=SPLINE_DICT['xis'].min()
+        if e_kev<SPLINE_DICT[('min_e_kev',xi)]:
+            e_kev=SPLINE_DICT[('min_e_kev',xi)]
+        if e_kev>SPLINE_DICT[('max_e_kev',xi)]:
+            e_kev=SPLINE_DICT[('max_e_kev',xi)]
+        return SPLINE_DICT[(mode,xi)](e_kev)
+    elif xi>=SPLINE_DICT['xis'].max():
+        xi=SPLINE_DICT['xis'].max()
+        if e_kev<SPLINE_DICT[('min_e_kev',xi)]:
+            e_kev=SPLINE_DICT[('min_e_kev',xi)]
+        if e_kev>SPLINE_DICT[('max_e_kev',xi)]:
+            e_kev=SPLINE_DICT[('max_e_kev',xi)]
+        return SPLINE_DICT[(mode,xi)](e_kev)
+
+
+def ion_sum(ex,xe):
+    '''
+    \sum_{i,j}(hnu-E^th_j)*(fion,HI/E^th_j)f_i x_i \sigma_i
+    for hun=ex
+    and ionized IGM fraction xe
+    '''
+    e_hi=ex-E_HI_ION
+    e_hei=ex-E_HEI_ION
+    e_heii=ex-E_HEII_ION
+
+    fi_hi=interp_heat_val(e_hi,xe,'n_{ion,HI}')\
+    +interp_heat_val(e_hi,xe,'n_{ion,HeI}')\
+    +interp_heat_val(e_hi,xe,'n_{ion,HeII}')+1.
+    fi_hi=fi_hi*(F_H*(1-xe))*sigma_HLike(ex)
+
+    fi_hei=interp_heat_val(e_hei,xe,'n_{ion,HI}')\
+    +interp_heat_val(e_hei,xe,'n_{ion,HeI}')\
+    +interp_heat_val(e_hei,xe,'n_{ion,HeII}')+1.
+    fi_hei=fi_hei*(F_HE*(1-xe))*sigma_HeI(ex)
+
+    fi_heii=interp_heat_val(e_heii,xe,'n_{ion,HI}')\
+    +interp_heat_val(e_heii,xe,'n_{ion,HeI}')\
+    +interp_heat_val(e_heii,xe,'n_{ion,HeII}')+1.
+    fi_heii=fi_heii*(F_HE*xe*sigma_HLike(ex,z=2.))
+
+    return fi_hi+fi_hei+fi_heii
