@@ -271,3 +271,29 @@ def ion_sum(ex,xe):
     fi_heii=fi_heii*(F_HE*xe*sigma_HLike(ex,z=2.))
 
     return fi_hi+fi_hei+fi_heii
+
+
+
+def alpha_B(T4):
+    '''
+    Case-B recombination coefficient
+    for ionized gas at T4x10^4K
+    Returns cm^3, sec^-1. Applies to situation
+    where photon is not re-absorbed by nearby Hydrogen
+    '''
+    return 2.6e-13*(T4)**-.7
+
+def alpha_B(T4):
+    '''
+    Case-A recombination coefficient
+    for neutral gas at T4x10^4K
+    Returns cm^3, sec^-1. Applies to situation
+    where photon is re-absorbed by nearby Hydrogen
+    '''
+    4.2e-13*(Tks[tnum-1]/1e4)**-.7
+
+def CRR(z):
+    '''
+    Clumping factor at redshift z
+    '''
+    return 2.9*((1.+zval)/6.)**(-1.1)
