@@ -283,7 +283,7 @@ def alpha_B(T4):
     '''
     return 2.6e-13*(T4)**-.7
 
-def alpha_B(T4):
+def alpha_A(T4):
     '''
     Case-A recombination coefficient
     for neutral gas at T4x10^4K
@@ -292,7 +292,7 @@ def alpha_B(T4):
     '''
     4.2e-13*(Tks[tnum-1]/1e4)**-.7
 
-def CRR(z):
+def clumping_factor(z):
     '''
     Clumping factor at redshift z
     '''

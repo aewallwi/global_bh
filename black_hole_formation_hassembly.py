@@ -534,7 +534,7 @@ def emissivity_gridded(z,freq,**kwargs):
         *dlogm/np.log(10.)).sum(axis=1)*kwargs['fduty']#total 5 GHz emissivity
         tfunc=interp.interp1d(t,emissivities)
         zv=np.linspace(zv.min(),zv.max(),N_INTERP_Z)#[1:-1]
-        emz=tfunc(np.hstack([t.min(),COSMO.age(zv[1:-1]),t.max()]))
+        emz=tfunc(np.hstack([t.max(),COSMO.age(zv[1:-1]),t.min()]))
 
         SPLINE_DICT[splkey]=interp.interp1d(zv,emz,fill_value=0.,
         bounds_error=False)#set emissivity outside of zlow and zhigh to be 0.
@@ -580,7 +580,7 @@ def emissivity_X_gridded(z,ex,units='Watts',**kwargs):
         *dlogm/np.log(10.)).sum(axis=1)*kwargs['fduty']#total 2keV emissivity
         tfunc=interp.interp1d(t,emissivities)
         zv=np.linspace(zv.min(),zv.max(),N_INTERP_Z)#[1:-1]
-        emz=tfunc(np.hstack([t.min(),COSMO.age(zv[1:-1]),t.max()]))
+        emz=tfunc(np.hstack([t.max(),COSMO.age(zv[1:-1]),t.min()]))
         SPLINE_DICT[splkey]=interp.interp1d(zv,emz,
         fill_value=0.,bounds_error=False)
     if units=='eV':
@@ -614,7 +614,9 @@ def rho_gridded(z,**kwargs):
         rhos=(n_bh*dlogm/np.log(10.)*m).sum(axis=1)
         tfunc=interp.interp1d(t,rhos)
         zv=np.linspace(zv.min(),zv.max(),N_INTERP_Z)#[1:-1]
-        rhoz=tfunc(np.hstack([t.min(),COSMO.age(zv[1:-1]),t.max()]))
+        #print(COSMO.age(zv[1])<t.max())
+        #print(COSMO.age(zv[-2])>t.min())
+        rhoz=tfunc(np.hstack([t.max(),COSMO.age(zv[1:-1]),t.min()]))
         SPLINE_DICT[splkey]=interp.interp1d(zv,rhoz)
     return SPLINE_DICT[splkey](z)
 

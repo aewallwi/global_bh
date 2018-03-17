@@ -7,7 +7,7 @@ from settings import M_INTERP_MIN,LITTLEH,PI,JY,DH,MP,MSOL,TH,KBOLTZMANN
 from settings import N_INTERP_Z,N_INTERP_MBH,Z_INTERP_MAX,Z_INTERP_MIN,ERG
 from settings import M_INTERP_MAX,KPC,F_HE,F_H,YP,BARN,YR,EV,ERG
 from settings import N_TSTEPS,E_HI_ION,E_HEI_ION,E_HEII_ION,SIGMAT
-from settings import KBOLTZMANN_KEV,NH0,NH0_CM,NHE0_CM
+from settings import KBOLTZMANN_KEV,NH0,NH0_CM,NHE0_CM,NHE0,C,LEDD
 from cosmo_utils import *
 import scipy.interpolate as interp
 import copy
@@ -16,118 +16,50 @@ import radio_background as RB
 import recfast4py.recfast as recfast
 from settings import DEBUG
 
-#********************************************
-#We first define a routine that generates
-#and grows black holes through the halo
-#mass function.
-#********************************************
 
-def dnbh_grid(recompute=False,**kwargs):
-    '''
-    differential number of black holes with mass mbh
-        mbh: black hole mass
-        z: redshift
-    '''
-    mkey=('dnbh','grid')+dict2tuple(kwargs)
-    if not SPLINE_DICT.has_key(mkey):
-        tau_grow=TEDDINGTON/kwargs['GROWTH_FACTOR']
-        #create t vals
-        tmax=COSMO.age(kwargs['ZMIN'])
-        tmin=COSMO.age(kwargs['ZMAX'])
-        tval=tmin
-        tvals=[tmin]
-        dt=0.
-        while tval<=tmax:
-            zval=COSMO.age(tval,inverse=True)
-            dt=21.7/COSMO.Ez(zval)/(1.+1.11*zval)#resolve time interval for one e-fold in
-                                                    #halo mass
-            tvals.append(tval+dt)
-            tval=tval+dt
-        tvals=tvals+[tmax,tmax*1.1]
-        tvals=[.9*tmin]+tvals
 
-        tvals=np.array(tvals)
-        nt=len(tvals)
-        nz=nt
-        zvals=COSMO.age(tvals,inverse=True)
-        #Calculate bounds halo masses
-        mmax_form_vals=np.zeros_like(zvals)
-        mmin_form_vals=np.zeros_like(mmax_form_vals)
-        for znum,zval in enumerate(zvals):
-            if kwargs['MASSLIMUNITS']=='KELVIN':
-                mmin_form_vals[znum]=tvir2mvir(kwargs['TMIN_HALO'],zval)
-                mmax_form_vals[znum]=tvir2mvir(kwargs['TMAX_HALO'],zval)
-            elif kwargs['MASSLIMUNITS']=='MSOL':
-                mmin_form_vals[znum]=kwargs['MMIN_HALO']
-                mmax_form_vals[znum]=kwargs['MMAX_HALO']
-        #Initialize mass grid.
-        mvals0=np.logspace(np.log(10.**MBH_INTERP_MIN),
-        np.log(10.**MBH_INTERP_MAX),N_INTERP_MBH,base=np.exp(1.))
-        nm=len(mvals0)
-        nbh_grid=np.zeros((nt,nm))
-        mgrid=np.zeros_like(nbh_grid)
-        mgrid[0]=mvals0
-        mhalos0=mvals0/kwargs['MASSFRACTION']
-        #print('pre-computing seed bh counts')
-        n_seeds=np.zeros((nt,nm))
-        n_seeds0=np.zeros_like(n_seeds)
-        for znum,zval in enumerate(zvals):
-            select=np.logical_and(mhalos0<=mmax_form_vals[znum],
-            mhalos0>=mmin_form_vals[znum])
-            n_seeds0[znum,select]=np.vectorize(massfunc)\
-            (mhalos0[select],zvals[znum])*kwargs['HALOFRACTION']
-
-        n_seeds[0,select]=n_seeds0[0,select]
-        nbh_grid[0]=n_seeds[0]
-        #print('growing black holes!')
-        for tnum in range(1,len(tvals)):
-            dt=tvals[tnum]-tvals[tnum-1]
-            mgrid[tnum]=mgrid[tnum-1]*np.exp(dt/tau_grow)#grow black holes from
-                                                         #accretion
-            #compute the number of seeds. To do this, look at t-delta t
-            #at t-delta t, halos that are one e-fold below m-min now have
-            #mass mmin to mmin+maccreted
-            #mhalos_prev=mgrid[tnum-1]/kwargs['massfrac']#mass of halos in last
-                                                        #t-step in each mbh bin
-            #mhalos_now=mhalos_prev*np.exp(dt/tau_halo(zvals[tnum-1]))#their mass now
-
-            #How to add seeds? Number of new black holes with mass from logmbh to logmbh+dlogmbh
-            #on this time-step equals number of halos with mhalo_prev=mbh/mhalo x exp(-dt/thalo)
-            mhalo_now=mgrid[tnum]/kwargs['MASSFRACTION']
-            mhalo_prev=mhalo_now*np.exp(-dt/tau_halo(zvals[tnum]))
-            select=mhalo_prev<=mmin_form_vals[tnum-1]#allow seeds in halos
-            select=np.logical_and(select,             #below thresshold in last
-            np.logical_and(mhalo_now>=mmin_form_vals[tnum],#time but in range
-            mhalo_now<=mmax_form_vals[tnum]))               #during this time
-            if np.any(select):
-                #print 'new seeds!'
-                n_seeds[tnum,select]=massfunc(mhalo_prev[select],zvals[tnum-1])\
-                *kwargs['HALOFRACTION']#number of seed halos per log10 mass
-            #else:
-                #print 'no new seeds! z=%.1f'%zvals[tnum]
-            nbh_grid[tnum]=nbh_grid[tnum-1]+n_seeds[tnum]
-        nbh_grid[nbh_grid<=0.]=1e-20
-        SPLINE_DICT[mkey]=(tvals,zvals,mgrid,nbh_grid,n_seeds,n_seeds0)
-    return SPLINE_DICT[mkey]
-
-def rho_bh(z,**kwargs):
+def rho_bh(z,mode='both',**kwargs):
     '''
     density of black holes in msolar h^2/Mpc^3
     at redshift z given model in **kwargs
     '''
-    splkey=('rho','gridded')+dict2tuple(kwargs)
+    assert mode in ['accretion','seeding','both']
+    splkey=('rho','gridded',mode)+dict2tuple(kwargs)
     if not SPLINE_DICT.has_key(splkey):
-        t,zv,m,n_bh,_,_=dnbh_grid(**kwargs)
-        #dlogm=np.log(m[0,1])-np.log(m[0,0])
-        rhovals=np.zeros_like(t)
-        for tnum in range(len(t)):
-            mfunc=interp.interp1d(m[tnum],n_bh[tnum])
-            rhovals[tnum]=integrate.quad(mfunc,m[tnum].min(),m[tnum].max())
-        tfunc=interp.interp1d(t,rhovals)
-        zv=np.linspace(zv.min(),zv.max(),N_INTERP_Z)#[1:-1]
-        rhoz=tfunc(np.hstack([t.min(),COSMO.age(zv[1:-1]),t.max()]))
-        SPLINE_DICT[splkey]=interp.interp1d(zv,rhoz)
+        print('Growing Black Holes')
+        taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
+        1.1*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
+        zaxis=COSMO.age(taxis,inverse=True)
+        #compute density of halos in mass range
+        rho_halos=np.zeros_like(zaxis)
+        rho_bh=np.zeros_like(zaxis)
+        for tnum in range(len(taxis)):
+            g=lambda x: massfunc(10.**x,zaxis[tnum])*10.**x
+            if kwargs['MASSLIMUNITS']=='KELVIN':
+                limlow=np.log10(tvir2mvir(kwargs['TMIN_HALO'],
+                zaxis[tnum]))
+                limhigh=np.log10(tvir2mvir(kwargs['TMAX_HALO'],
+                zaxis[tnum]))
+            else:
+                limlow=np.log10(kwargs['MMIN_HALO'])
+                limhigh=np.log10(kwargs['MMAX_HALO'])
+            rho_halos[tnum]=integrate.quad(g,limlow,limhigh)[0]
+        rho_bh[0]=kwargs['FS']*rho_halos[0]
+        dt=(taxis[tnum]-taxis[tnum-1])
+        for tnum in range(1,len(taxis)):
+            rho_bh[tnum]=rho_bh[tnum-1]
+            if mode=='seeding' or mode=='both':
+                rho_bh[tnum]=rho_bh[tnum]+kwargs['FS']*(rho_halos[tnum]-rho_halos[tnum-1])
+            if mode=='accretion' or mode=='both':
+                rho_bh[tnum]=rho_bh[tnum]+rho_bh[tnum-1]*dt/kwargs['TAU_GROW']
+        tfunc=interp.interp1d(taxis,rho_bh)
+        zv=np.linspace(zaxis.min(),zaxis.max(),N_INTERP_Z)#[1:-1]
+        rhoz=tfunc(np.hstack([taxis.max(),COSMO.age(zv[1:-1]),taxis.min()]))
+        SPLINE_DICT[splkey]=interp.interp1d(zv,rhoz,fill_value=0.,
+        bounds_error=False)
     return SPLINE_DICT[splkey](z)
+
+
 
 def emissivity_radio(z,freq,**kwargs):
     '''
@@ -138,8 +70,8 @@ def emissivity_radio(z,freq,**kwargs):
         freq, co-moving frequency
         kwargs, model dictionary parameters
     '''
-    if z<=kwargs['zmax'] and z>=kwargs['zmin']:
-        return 1.0e22*(kwargs['F_R']/250.)*(kwargs['F_X']/2e-2)**0.86\
+    if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN']:
+        return 1.0e22*(kwargs['FR']/250.)*(kwargs['FX']/2e-2)**0.86\
         *(rho_bh(z,**kwargs)/1e4)*(freq/1.4e9)**(-kwargs['ALPHA_R'])\
         *((2.4**(1.-kwargs['ALPHA_X'])-0.1**(1.-kwargs['ALPHA_X']))/\
         (10.**(1.-kwargs['ALPHA_X']-2.**(1.-kwargs['ALPHA_X']))))
@@ -155,8 +87,8 @@ def emissivity_xrays(z,E_x,**kwargs):
         E_x, x-ray energy (keV)
         kwargs, model parameters dictionary
     '''
-    if z<=kwargs['zmax'] and z>=kwargs['zmin']:
-        return 2.322e48*(kwargs['F_X']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
+    if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN']:
+        return 2.322e48*(kwargs['FX']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
         *(rho_bh(z,**kwargs)/1e4)*(1.-kwargs['ALPHA_X'])\
         /(10.**(1.-kwargs['ALPHA_X'])-2.**(1.-kwargs['ALPHA_X']))\
         *np.exp(-10.**kwargs['LOG10_N']*(F_H*sigma_HLike(E_x)\
@@ -194,19 +126,20 @@ def background_intensity(z,x,mode='radio',**kwargs):
         xrays: kev/sec/cm^2/kev/sr
 
     '''
-    if z<=kwargs['zmax']:
+    if z<=kwargs['ZMAX']:
         if mode=='radio':
             area_factor=1.
             emissivity_function=emissivity_radio
-        elif: mode=='uv':
+        elif mode=='uv':
             area_factor=1e4
             emissivity_function=emissivity_uv
-        elif: mode=='xrays':
+        elif mode=='xrays':
             area_factor=1e4
             emissivity_function=emissivity_xrays
-        g=lambda zp:emissivity_function(zp,x*(1+zp)/(1.+z))/(1.+zp)/COSMO.Ez(zp)
+        g=lambda zp:emissivity_function(zp,x*(1+zp)/(1.+z),**kwargs)/(1.+zp)\
+        /COSMO.Ez(zp)
         return DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.*(1.+z)**3./area_factor\
-        *integrate.quad(g,z,kwargs['zmax'])[0]
+        *integrate.quad(g,z,kwargs['ZMAX'])[0]
     else:
         return 0.
 
@@ -221,16 +154,17 @@ def brightness_temperature(z,freq,**kwargs):
     return background_intensity(z,freq,mode='radio',**kwargs)*(C*1e3/freq)**2.\
     /2./KBOLTZMANN
 
-def ndot_uv(z,E_low=13.6,E_high=np.infty):
+def ndot_uv(z,E_low=13.6,E_high=np.infty,**kwargs):
     '''
-    number of photons per second per (h/Mpc) at redshift z
+    number of photons per second per (h/Mpc)^3 at redshift z
     emitted between E_low and E_high
     Args:
         z, redshift
         E_low, lower photon energy (eV)
         E_high, higher photon energy (eV)
     '''
-    return (emissivity_uv(elow)-emissivity_uv(ehigh))/(1.7)
+    return (emissivity_uv(z,E_low,**kwargs)\
+    -emissivity_uv(z,E_high,**kwargs))/(1.7)
 
 #******************************************************************************
 #Simulation functions
@@ -249,8 +183,26 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
     tmax=COSMO.age(zlow)
     tmin=COSMO.age(zhigh)
     taxis=np.linspace(tmin,tmax,ntimes)
-    dt=taxis[1]-taxis[0]
+    dt=(taxis[1]-taxis[0])*YR*1e9#dt in seconds (convert from Gyr)
     zaxis=COSMO.age(tmin,tmax,ntimes)
     qvals=np.zeros_like(taxis)
+    qvals_He=np.zeros_like(qvals)
+    tau_vals=np.zeros_like(qvals)
+    chi=YP/4./(1.-YP)
     for tnum in range(1,len(qvals)):
+        dz=-zaxis[tnum]+zaxis[tnum-1]
         tval,zval=taxis[tnum-1],zaxis[tnum-1]
+        trec_inv=alpha_B(T4)*NH0_CM*(1.+chi)*(1.+zval)*clumping_factor(zval)
+        trec_He_inv=alpha_B(T4)*NH0_CM*(1.+2.*chi)*(1.+zval)**3.\
+        *clumping_factor(zval)
+        dq=-qvals[tnum-1]/trec
+        dq_He=-qvals_He[tnum-1]/trec_He*dt
+        if zval>=kwargs['ZMIN'] and zval<=kwargs['ZMAX']:
+            dq=dq+ndot_uv(zval,13.6,4.*13.6,**kwargs)/NH0*dt
+            dq_He=dq_He+ndot_uv(zval,13.6*4.,np.inf,**kwargs)/NHE0
+        dtau=DHcm*NH0_CM*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
+        (qvals[tnum-1]*(1.+chi)+qvals_he[tnum-1]*chi)
+        taus[tnum]=taus[tnum-1]+dtau
+        qvals[tnum]=qvals[tnum-1]+dq
+        qvals_He[tnum]=qvals_He[tnum-1]+dq_He
+        return taxis,zaxis,qvals,taus
