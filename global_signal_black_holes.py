@@ -78,7 +78,7 @@ def emissivity_radio(z,freq,**kwargs):
     else:
         return 0.
 
-def emissivity_xrays(z,E_x,**kwargs):
+def emissivity_xrays(z,E_x,obscured=True,**kwargs):
     '''
     emissivity of X-rays from accreting black holes at redshift z
     in (keV)/sec/keV/(h/Mpc)^3
@@ -88,11 +88,13 @@ def emissivity_xrays(z,E_x,**kwargs):
         kwargs, model parameters dictionary
     '''
     if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN']:
-        return 2.322e48*(kwargs['FX']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
+        output=2.322e48*(kwargs['FX']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
         *(rho_bh(z,**kwargs)/1e4)*(1.-kwargs['ALPHA_X'])\
-        /(10.**(1.-kwargs['ALPHA_X'])-2.**(1.-kwargs['ALPHA_X']))\
-        *np.exp(-10.**kwargs['LOG10_N']*(F_H*sigma_HLike(E_x)\
-        +F_HE*sigma_HeI(E_x)))
+        /(10.**(1.-kwargs['ALPHA_X'])-2.**(1.-kwargs['ALPHA_X']))
+        if obscured:
+            output=output*np.exp(-10.**kwargs['LOG10_N']*(F_H*sigma_HLike(E_x)\
+            +F_HE*sigma_HeI(E_x)))
+        return output
     else:
         return 0.
 
@@ -106,8 +108,8 @@ def emissivity_uv(z,E_uv,**kwargs):
         kwargs, model parameter dictionary
     '''
     power_select=np.sqrt(np.sign(E_uv-13.6),dtype=complex)
-    return 3.5e3*emissivity_xrays(z,2.,**kwargs)*(2500./912.)**(-.61)\
-    *(E_uv/13.6)**(-0.61*np.imag(alpha_select)-1.71*(np.real(power_select)))\
+    return 3.5e3*emissivity_xrays(z,2.,obscured=False,**kwargs)*(2500./912.)**(-.61)\
+    *(E_uv/13.6)**(-0.61*np.imag(power_select)-1.71*(np.real(power_select)))\
     *kwargs['F_ESC']
 
 
@@ -184,7 +186,7 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
     tmin=COSMO.age(zhigh)
     taxis=np.linspace(tmin,tmax,ntimes)
     dt=(taxis[1]-taxis[0])*YR*1e9#dt in seconds (convert from Gyr)
-    zaxis=COSMO.age(tmin,tmax,ntimes)
+    zaxis=COSMO.age(taxis,inverse=True)
     qvals=np.zeros_like(taxis)
     qvals_He=np.zeros_like(qvals)
     tau_vals=np.zeros_like(qvals)
@@ -195,14 +197,27 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
         trec_inv=alpha_B(T4)*NH0_CM*(1.+chi)*(1.+zval)*clumping_factor(zval)
         trec_He_inv=alpha_B(T4)*NH0_CM*(1.+2.*chi)*(1.+zval)**3.\
         *clumping_factor(zval)
-        dq=-qvals[tnum-1]/trec
-        dq_He=-qvals_He[tnum-1]/trec_He*dt
+        dq=-qvals[tnum-1]*trec_inv
+        dq_He=-qvals_He[tnum-1]*trec_He_inv*dt
         if zval>=kwargs['ZMIN'] and zval<=kwargs['ZMAX']:
-            dq=dq+ndot_uv(zval,13.6,4.*13.6,**kwargs)/NH0*dt
-            dq_He=dq_He+ndot_uv(zval,13.6*4.,np.inf,**kwargs)/NHE0
-        dtau=DHcm*NH0_CM*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
-        (qvals[tnum-1]*(1.+chi)+qvals_he[tnum-1]*chi)
-        taus[tnum]=taus[tnum-1]+dtau
+            dq=dq+ndot_uv(zval,E_low=13.6,E_high=4.*13.6,**kwargs)/NH0*dt
+            dq_He=dq_He+ndot_uv(zval,E_low=13.6*4.,E_high=np.inf,**kwargs)/NHE0
+        dtau=DH*1e3*KPC*1e2*NH0_CM*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
+        (qvals[tnum-1]*(1.+chi)+qvals_He[tnum-1]*chi)*dz
+        tau_vals[tnum]=tau_vals[tnum-1]+dtau
         qvals[tnum]=qvals[tnum-1]+dq
         qvals_He[tnum]=qvals_He[tnum-1]+dq_He
-        return taxis,zaxis,qvals,taus
+    return taxis,zaxis,qvals,tau_vals
+
+
+def run_heating(zlow,zhigh,ntimes=int(1e2),T4=1.,**kwargs):
+    '''
+    Compute the kinetic temperature and electron fraction in the neutral IGM
+    (xe) as a function of redshift.
+    Args:
+        zlow, minimum redshift to evolve calculation to
+        zhigh, maximum redshift to evolve calculation to
+        ntimes, number of redshift steps
+        T4, temperature of HII regions
+        kwargs, dictionary of model parameters.
+    '''

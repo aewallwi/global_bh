@@ -4,7 +4,7 @@
 import numpy as np
 import scipy.integrate as integrate
 import scipy.interpolate as interpolate
-from settings import COSMO, MP, MSOL, LITTLEH,PI
+from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
@@ -296,4 +296,4 @@ def clumping_factor(z):
     '''
     Clumping factor at redshift z
     '''
-    return 2.9*((1.+zval)/6.)**(-1.1)
+    return 2.9*((1.+z)/6.)**(-1.1)
