@@ -1,6 +1,5 @@
 import scipy.optimize as op
 import numpy as np
-import os
 import scipy.integrate as integrate
 from settings import COSMO,TEDDINGTON,MBH_INTERP_MAX,MBH_INTERP_MIN,SPLINE_DICT
 from settings import M_INTERP_MIN,LITTLEH,PI,JY,DH,MP,MSOL,TH,KBOLTZMANN
@@ -8,13 +7,14 @@ from settings import N_INTERP_Z,N_INTERP_MBH,Z_INTERP_MAX,Z_INTERP_MIN,ERG
 from settings import M_INTERP_MAX,KPC,F_HE,F_H,YP,BARN,YR,EV,ERG,F21
 from settings import N_TSTEPS,E_HI_ION,E_HEI_ION,E_HEII_ION,SIGMAT
 from settings import KBOLTZMANN_KEV,NH0,NH0_CM,NHE0_CM,NHE0,C,LEDD
-from settings import N_INTERP_X
+from settings import N_INTERP_X,TCMB0,ARAD,ME
 from cosmo_utils import *
 import scipy.interpolate as interp
 import copy
 import matplotlib.pyplot as plt
 import radio_background as RB
 import camb
+import os
 from settings import DEBUG
 
 
@@ -94,7 +94,7 @@ def emissivity_xrays(z,E_x,obscured=True,**kwargs):
         /(10.**(1.-kwargs['ALPHA_X'])-2.**(1.-kwargs['ALPHA_X']))
         if obscured:
             output=output*np.exp(-10.**kwargs['LOG10_N']*(F_H*sigma_HLike(E_x)\
-            +F_HE*sigma_HeI(E_x)))
+            +F_HE/F_H*sigma_HeI(E_x)))
         return output
     else:
         return 0.
@@ -212,7 +212,8 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
 
 
 
-def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,**kwargs):
+def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
+,**kwargs):
     '''
     Compute the kinetic temperature and electron fraction in the neutral IGM
     (xe) as a function of redshift.
@@ -227,7 +228,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,**kwargs):
     print('Computing Ionization History')
     taxis,zaxis,q_ion,_=q_ionize(zlow,zhigh,ntimes,T4,**kwargs)
     aaxis=1./(1.+zaxis)
-    xray_axis=np.logspace(-2,4,N_INTERP_X)
+    xray_axis=np.logspace(-1,3,N_INTERP_X)
     radio_axis=np.logspace(6,12,N_INTERP_X)#radio frequencies
     dlogx=np.log10(xray_axis[1]/xray_axis[0])
     Tks=np.zeros(ntimes)
@@ -238,11 +239,16 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,**kwargs):
     trads=np.zeros(ntimes)#21-cm background temperature
     ts=np.zeros(ntimes)
     tb=np.zeros(ntimes)
-    recfast=np.loadtxt('recfast_LCDM.dat')
-    print('Initialzing xe and Tk with recfast values.')
+    if diagnostic:
+        jx_matrix=[]
+        xray_matrix=[]
+        dtau_matrix=[]
+    dirname,filename=os.path.split(os.path.abspath(__file__))
+    recfast=np.loadtxt(dirname+'/recfast_LCDM.dat')
+    if verbose: print('Initialzing xe and Tk with recfast values.')
     xes[0]=interp.interp1d(recfast[:,0],recfast[:,1])(zhigh)
     Tks[0]=interp.interp1d(recfast[:,0],recfast[:,-1])(zhigh)
-    print('Initializing Interpolation.')
+    if verbose: print('Initializing Interpolation.')
     init_interpolation_tables()
     print('Starting Evolution at z=%.2f, xe=%.2e, Tk=%.2f'%(zaxis[0],xes[0],Tks[0]))
     for tnum in range(1,len(taxis)):
@@ -251,40 +257,61 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,**kwargs):
         xrays=xray_axis*aaxis[0]/aval
         freqs=radio_axis*aaxis[0]/aval
         dz=zaxis[tnum]-zval
-        dtaus=-dz*(DH*1e3*KPC*1e2)*(1.+zval)**2./COSMO.Ez(zval)\
-        *(1.-(qval+(1.-qval)*xe))\
-        *((1.-xe)*NH0_CM*sigma_HLike(xrays)\
-        +(1.-xe)*NHE0_CM*sigma_HeI(xrays)\
-        +xe*NHE0_CM*sigma_HLike(xrays,z=2.))
-        jxs=(jxs*aval**3.+\
-        emissivity_xrays(zval,xrays,**kwargs)*DH/4./PI*aval/COSMO.Ez(zval)\
-        /(1e3*KPC*1e2)**2.*LITTLEH**3.)\
-        *np.exp(-dtaus)/avals[tnum]**3.
-        jrad=(jrad*aval**3.+\
-        emissivity_radio(zval,xrays,**kwargs)*DH/4./PI*aval/COSMO.Ez(zval)\
-        /(1e3*KPC)**2.*LITTLEH**3.)\
-        *np.exp(-dtaus)/avals[tnum]**3.
-        trads[tnum]=interp.interp1d(freqs,jrad*(C*1e3/freqs)**2./2./KBOLTZMANN)
-        (F21)
-        jxfunc=interp.interp1d(xrays,jxs,fill_value=0.,
-        kind='linear',bounds_error=False)
-        g=lambda x:heating_integrand(np.exp(x),xe,jxfunc)
-        lxmin=np.log(xrays.min())
-        lxmax=np.log(xrays.max())
-        epsx=integrate.quad(g,lxmin,lxmax)[0]
-        dtdz=-TH*1e9*YR/COSMO.Ez(zval)*aval
-        dt=dtdz*dz
-        g=lambda x:ionization_integrand(np.exp(x),xe,jxfunc)
-        gamma_ion=integrate.quad(g,lxmin,lxmax)[0]
-        dxe=(gamma_ion\
-        -alpha_a(T4)*xe**2.*NH0_CM/aval**3.*clumping_factor(zval))*dt
-        dTk=2.*Tk*aval*dz-Tk*dxe/(1.+xe)+2./3./KBOLTZMANN_KEV/(1.+xe)*epsx*dt
-        Tks[tnum]=Tk+dTk
-        xes[tnum]=xe+dxe
-        ts[tnum]=tk[tnum]
-        tb[tnum]=27.*(1.-xes[tnum])*(1.-q_ion[tnum])\
-        *(1.-(TCMB/avals[tnum]+trads[tnum])/ts[tnum])\
+        if xe<1.:
+            dtaus=-dz*(DH*1e3*KPC*1e2)/aval**2./COSMO.Ez(zval)\
+            *(1.-(qval+(1.-qval)*xe))\
+            *((1.-xe)*NH0_CM*sigma_HLike(xrays)\
+            +(1.-xe)*NHE0_CM*sigma_HeI(xrays)\
+            +xe*NHE0_CM*sigma_HLike(xrays,z=2.))
+            dtaus[xrays<kwargs['EX_MIN']]=9e99
+            #subtract emissivity since dz is negative
+            jxs=(jxs*aval**3.\
+            -emissivity_xrays(zval,xrays,obscured=True,**kwargs)*DH/4./PI*aval/COSMO.Ez(zval)\
+            /(1e3*KPC*1e2)**2.*LITTLEH**3.*dz)\
+            *np.exp(-dtaus)/aaxis[tnum]**3.
+            if diagnostic:
+                jx_matrix=jx_matrix+[jxs]
+                xray_matrix=xray_matrix+[xrays]
+                dtau_matrix=dtau_matrix+[dtaus]
+            #subtract emissivity since dz is negative
+            jrad=(jrad*aval**3.\
+            -emissivity_radio(zval,freqs,**kwargs)*DH/4./PI*aval/COSMO.Ez(zval)\
+            /(1e3*KPC)**2.*LITTLEH**3.*dz)/aaxis[tnum]**3.
+            trads[tnum]=interp.interp1d(freqs,jrad*(C*1e3/freqs)**2./2./KBOLTZMANN)\
+            (F21)
+            jxfunc=interp.interp1d(xrays,jxs,fill_value=0.,
+            kind='linear',bounds_error=False)
+            g=lambda x:heating_integrand(np.exp(x),xe,jxfunc)
+            lxmin=np.log(xrays.min())
+            lxmax=np.log(xrays.max())
+            epsx=integrate.quad(g,lxmin,lxmax)[0]
+            dtdz=-TH*1e9*YR/COSMO.Ez(zval)*aval
+            dt=dtdz*dz
+            g=lambda x:ionization_integrand(np.exp(x),xe,jxfunc)
+            gamma_ion=integrate.quad(g,lxmin,lxmax)[0]
+            dxe=(gamma_ion\
+            -alpha_A(Tks[tnum-1]/1e4)*xe**2.*NH0_CM/aval**3.*clumping_factor(zval))*dt
+            dTk_a=2.*Tk*aval*dz
+            dTk_x=2./3./KBOLTZMANN_KEV/(1.+xe)*epsx*dt
+            dTk_i=-Tk*dxe/(1.+xe)
+            dTk_c=xe/(1.+xe+F_HE)*8.*SIGMAT*(TCMB0/aval-Tk)/3./ME/(C*1e3)\
+            *ARAD*(TCMB0/aval)**4.*dt*1e-4
+            if verbose: print('dTk_a=%.2e,dTk_c=%.2e,dTk_x=%.2e,dTk_i=%.2e'\
+            %(dTk_a,dTk_c,dTk_x,dTk_i))
+            Tks[tnum]=Tk+dTk_a+dTk_c+dTk_x+dTk_i
+            xes[tnum]=xe+dxe
+            ts[tnum]=Tks[tnum]
+            print('z=%.2f,Tk=%.2f,xe=%.2e,QHII=%.2f'%(zaxis[tnum],Tks[tnum],
+            xes[tnum],q_ion[tnum]))
+    for tnum in range(ntimes):
+        tb[tnum]=27.*(1.-xes[tnum])*np.max([(1.-q_ion[tnum]),0.])\
+        *(1.-(TCMB0/aaxis[tnum]+trads[tnum])/ts[tnum])\
         *(COSMO.Ob(0.)*LITTLEH**2./0.023)*(0.15/COSMO.Om(0.)/LITTLEH**2.)\
-        *(1./10./avals[tnum])**.5
-        print('Tk=%.2f,xe=%.1e'%(Tks[tnum],xes[tnum]))
-    return taxis,zaxis,Tks,xes,qvals,trads,ts,tb
+        *(1./10./aaxis[tnum])**.5
+    output={'t':taxis,'z':zaxis,'Tk':Tks,'xe':xes,'q_ion':q_ion,'trad':trads,
+    'ts':ts,'tb':tb}
+    if diagnostic:
+        output['jxs']=np.array(jx_matrix)
+        output['xrays']=np.array(xray_matrix)
+        output['taus']=np.array(dtau_matrix)
+    return output

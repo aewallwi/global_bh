@@ -1,7 +1,8 @@
 import numpy as np
 from colossus.cosmology import cosmology
-
+TCMB0=2.73
 PI=np.pi
+ARAD=7.5657e-16#J/m^3/K^4 radiation constant
 F21=1420405751.7667 #HI hyperfine line frequency (Hz)
 KBOLTZMANN=1.28e-23#Boltzmann Constant in Joules/Kelvin
 ERG=1e-7#ERG in Joules
@@ -14,6 +15,7 @@ DH=C/COSMO.H0#Hubble Distance
 TEDDINGTON=.45#EDDINGTON E-folding time (Gyr)
 SPLINE_DICT={}
 MP=1.6726219e-27#Proton mass in kg
+ME=9.10938356e-31#Electron mass in kg
 MSOL=1.99e30#solar mass in kg
 PI=np.pi
 AU=1.496e11
@@ -48,4 +50,4 @@ KBOLTZMANN_KEV=KBOLTZMANN/(EV*1e3)#Boltzmann constant in keV
 NH0=COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP*(1.-YP)/LITTLEH
 NH0_CM=NH0/(1e5*KPC)**3.*LITTLEH**3.
 NHE0=NH0*YP/4./(1.-YP)
-NHE0_CM=NH0*YP/4./(1.-YP)
+NHE0_CM=NH0_CM*YP/4./(1.-YP)

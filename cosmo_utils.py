@@ -2,12 +2,15 @@
 #cosmology utility functions
 #
 import numpy as np
+import os
 import scipy.integrate as integrate
 import scipy.interpolate as interpolate
-from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN
+from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
+from settings import E_HEII_ION,SIGMAT,F_H,F_HE
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
+import scipy.interpolate as interp
 
 #*********************************************************
 #utility functions
@@ -143,28 +146,47 @@ def sigma_HLike(e,z=1.):
     '''
     ex=e*1e3 #input energy in keV, convert to eV
     e1=13.6*z**2.
-    if ex<e1:
-        return 0.
+    if isinstance(ex,float):
+        if ex<e1:
+            return 0.
+        else:
+            eps=np.sqrt(ex/e1-1.)
+            return 6.3e-18*(e1/ex)**4.*np.exp(4.-(4.*np.arctan(eps)/eps))/\
+            (1-np.exp(-2.*PI/eps))/z/z
     else:
-        eps=np.sqrt(ex/e1-1.)
-        return 6.3e-18*(e1/ex)**4.*np.exp(4.-(4.*np.arctan(eps)/eps))/\
-        (1-np.exp(-2.*PI/eps))/z/z
+        output=np.zeros_like(ex)
+        select=ex>=e1
+        eps=np.sqrt(ex[select]/e1-1.)
+        output[select]=6.3e-18*(e1/ex[select])**4.\
+        *np.exp(4.-(4.*np.arctan(eps)/eps))/(1.-np.exp(-2.*PI/eps))/z/z
+        return output
+
 def sigma_HeI(e):
     '''
     gives ionization cross section in cm^2 for X-ray of energy ex (keV)
     for HeI atom.
     '''
     ex=e*1e3#input energy is in keV, convert to eV
-    if ex>=2.459e1:
+    if isinstance(ex,float):
+        if ex>=2.459e1:
+            e0,sigma0,ya,p,yw,y0,y1=1.361e1,9.492e2,1.469,3.188,2.039,4.434e-1,2.136
+            x=ex/e0-y0
+            y=np.sqrt(x**2.+y1**2.)
+            fy=((x-1.)**2.+yw**2.)*y**(0.5*p-5.5)\
+            *np.sqrt(1.+np.sqrt(y/ya))**(-p)
+            return fy*sigma0*BARN*1e6#Last factor converts from Mbarnes to cm^-2
+        else:
+            return 0.
+    else:
+        output=np.zeros_like(ex)
+        select=ex>=2.459e1
         e0,sigma0,ya,p,yw,y0,y1=1.361e1,9.492e2,1.469,3.188,2.039,4.434e-1,2.136
         x=ex/e0-y0
         y=np.sqrt(x**2.+y1**2.)
         fy=((x-1.)**2.+yw**2.)*y**(0.5*p-5.5)\
         *np.sqrt(1.+np.sqrt(y/ya))**(-p)
-        return fy*sigma0*BARN*1e6#Last factor converts from Mbarnes to cm^-2
-    else:
-        return 0.
-
+        output[select]=fy[select]*sigma0*BARN*1e6#Last factor converts from Mbarnes to cm^-2
+        return output
 
 #*******************************************
 #initialize interpolation x_int_tables
@@ -191,7 +213,7 @@ def init_interpolation_tables():
                    'x_int_tables/xi_0.999.dat']
 
     SPLINE_DICT['xis']=np.array([1e-4,2.318e-4,4.677e-4,1.0e-3,2.318e-3,
-    4.677e-3,1.0e-2,2.318e-2,4.677e-2,1.0e-1,.5,.9,.99,.999])
+    4.677e-3,1.0e-2,2.318e-2,4.677e-2,1e-1,.5,.9,.99,.999])
     for tname,xi in zip(table_names,SPLINE_DICT['xis']):
         dirname,filename=os.path.split(os.path.abspath(__file__))
         itable=np.loadtxt(dirname+'/'+tname,skiprows=3)
@@ -243,6 +265,30 @@ def interp_heat_val(e_kev,xi,mode='f_ion'):
         if e_kev>SPLINE_DICT[('max_e_kev',xi)]:
             e_kev=SPLINE_DICT[('max_e_kev',xi)]
         return SPLINE_DICT[(mode,xi)](e_kev)
+    else:
+        print('xi='+str(xi))
+
+
+def heating_integrand(ex,xe,jxf):
+    pfactor=4.*PI*jxf(ex)
+
+    ex_hi=np.max([ex-E_HI_ION,0.])
+    ex_hei=np.max([ex-E_HEI_ION,0.])
+    ex_heii=np.max([ex-E_HEII_ION,0.])
+
+    hi_rate=ex_hi*(1.-xe)*sigma_HLike(ex)*F_H\
+    *interp_heat_val(ex_hi,xe,'f_heat')
+    hei_rate=ex_hei*(1.-xe)*sigma_HeI(ex)*F_HE\
+    *interp_heat_val(ex_hei,xe,'f_heat')
+    heii_rate=ex_heii*xe*sigma_HLike(ex,z=2.)*F_HE\
+    *interp_heat_val(ex_heii,xe,'f_heat')
+
+    return pfactor*(hi_rate+hei_rate+heii_rate)
+
+def ionization_integrand(ex,xe,jxf):
+    pfactor = 4.*PI*jxf(ex)
+    return pfactor*ion_sum(ex,xe)
+
 
 
 def ion_sum(ex,xe):
@@ -290,7 +336,7 @@ def alpha_A(T4):
     Returns cm^3, sec^-1. Applies to situation
     where photon is re-absorbed by nearby Hydrogen
     '''
-    4.2e-13*(Tks[tnum-1]/1e4)**-.7
+    return 4.2e-13*(T4)**-.7
 
 def clumping_factor(z):
     '''

@@ -18,7 +18,6 @@ import scipy.interpolate as interp
 import copy
 import matplotlib.pyplot as plt
 import radio_background as RB
-import recfast4py.recfast as recfast
 from settings import DEBUG
 
 def q_ionize(zlow,zhigh,fesc=1.,norec=False,ntimes=int(1e4),T4=1.,**kwargs):
@@ -66,7 +65,7 @@ def q_ionize(zlow,zhigh,fesc=1.,norec=False,ntimes=int(1e4),T4=1.,**kwargs):
     #print fesc*ndot_ion(zval,**kwargs)*1e9*YRs
     #print nH0
     return zaxis,taxis,qvals,taus,qdots,dtaus
-def run_heating(zlow,xe0,Tk0,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**kwargs):
+def run_heating(zlow,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**kwargs):
     #first compute QHII
     nH0=(1.-YP)*COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP#hydrogen number density at z=0 in coMpc^-3
     nH0cm=nH0/(1e3*KPC*1e2)**3./LITTLEH**3.#hydrogen density at z=0 in cm^-3
@@ -91,12 +90,13 @@ def run_heating(zlow,xe0,Tk0,fesc=1.,ntimes=int(1e2),T4=1.,NX=100,XRAYMAX=1e2,**
     xes=np.zeros_like(zaxis)
     #zdec=137.*(COSMO.Ob(0)*LITTLEH**2./.022)**.4-1.
     #Tks[0]=2.73*(1+zdec)*(1+zaxis[0])/(1.+zdec)**2.#initialize first Tk to equal adiabatic cooled value.
-    print('Initializing xe,Tk with RecFast')
+    print('Initializing xe,Tk with RecFast Values')
     #zarr, Xe_H, Xe_He, Xe ,TM=recfast.Xe_frac(Yp=YP, T0=COSMO.Tcmb0,
     #Om=COSMO.Om0, Ob=COSMO.Ob0, OL=COSMO.Ode0, Ok=0.,
     #h100=LITTLEH, Nnu=COSMO.Neff, F=1.14, fDM=0.)
-    xes[0]=xe0#interp.interp1d(zarr,Xe)(zaxis[0])#xe in non HI regions set to zero at first (or recfast)
-    Tks[0]=Tk0#interp.interp1d(zarr,TM)(zaxis[0])#Temperature from recfast
+    recfast=np.loadtxt('recfast_LCDM.dat')
+    xes[0]=interp.interp1d(recfast[:,0],recfast[:,1])(zhigh)#interp.interp1d(zarr,Xe)(zaxis[0])#xe in non HI regions set to zero at first (or recfast)
+    Tks[0]=interp.interp1d(recfast[:,0],recfast[:,-1])(zhigh)#interp.interp1d(zarr,TM)(zaxis[0])#Temperature from recfast
     #taus={}
     print('Initializing Interpolation')
     init_interpolation_tables()
