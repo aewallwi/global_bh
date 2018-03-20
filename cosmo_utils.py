@@ -6,12 +6,12 @@ import os
 import scipy.integrate as integrate
 import scipy.interpolate as interpolate
 from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
-from settings import E_HEII_ION,SIGMAT,F_H,F_HE
+from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
 import scipy.interpolate as interp
-
+from settings import LY_N_ALPHA_SWITCH
 #*********************************************************
 #utility functions
 #*********************************************************
@@ -197,6 +197,7 @@ def init_interpolation_tables():
     per ionization of H, He, HI, fraction of energy deposited in heating and
     fraction deposited in ionization.
     '''
+    dirname,filename=os.path.split(os.path.abspath(__file__))
     table_names=['x_int_tables/log_xi_-4.0.dat',
                    'x_int_tables/log_xi_-3.6.dat',
                    'x_int_tables/log_xi_-3.3.dat',
@@ -215,7 +216,6 @@ def init_interpolation_tables():
     SPLINE_DICT['xis']=np.array([1e-4,2.318e-4,4.677e-4,1.0e-3,2.318e-3,
     4.677e-3,1.0e-2,2.318e-2,4.677e-2,1e-1,.5,.9,.99,.999])
     for tname,xi in zip(table_names,SPLINE_DICT['xis']):
-        dirname,filename=os.path.split(os.path.abspath(__file__))
         itable=np.loadtxt(dirname+'/'+tname,skiprows=3)
         SPLINE_DICT[('f_ion',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,1])
         SPLINE_DICT[('f_heat',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,2])
@@ -227,6 +227,13 @@ def init_interpolation_tables():
         SPLINE_DICT[('shull_heating',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,8])
         SPLINE_DICT[('min_e_kev',xi)]=(itable[:,0]/1e3).min()
         SPLINE_DICT[('max_e_kev',xi)]=(itable[:,0]/1e3).max()
+
+    '''
+    Next, load up the kappa tables.
+    '''
+    kappa_eH=np.loadtxt(dirname+'/kappa_eH_table.dat')
+    kappa_pH=np.loadtxt(dirname+'/kappa_pH_table.dat')
+
 
 def interp_heat_val(e_kev,xi,mode='f_ion'):
     '''
@@ -343,3 +350,169 @@ def clumping_factor(z):
     Clumping factor at redshift z
     '''
     return 2.9*((1.+z)/6.)**(-1.1)
+
+
+def kappa_10_HH(tk):
+    '''
+    kappa_10 collisional rate for HH collisions
+    in cm^3/sec
+    Args:
+        tk, kinetic temperature (Kelvin)
+    '''
+    splkey=('kappa_10','HH')
+    if not SPLINE_DICT.has_key(splkey):
+        kappa_array=\
+        np.array([[1.,1.38e-13],
+                  [2.,1.43e-13],
+                  [4.,2.71e-13],
+                  [5.,6.60e-13],
+                  [8.,1.47e-12],
+                  [10.,2.88e-12],
+                  [15.,9.10e-12],
+                  [20.,1.78e-11],
+                  [25.,2.73e-11],
+                  [30.,3.67e-11],
+                  [40.,5.38e-11],
+                  [50.,6.86e-11],
+                  [60.,8.14e-11],
+                  [70.,9.25e-11],
+                  [80.,1.02e-10],
+                  [90.,1.11e-10],
+                  [100.,1.19e-10],
+                  [200.,1.75e-10],
+                  [300.,2.09e-10],
+                  [501.,2.565e-10],
+                  [701.,2.91e-10],
+                  [1000.,3.31e-10],
+                  [2000.,4.27e-10],
+                  [3000.,4.97e-10],
+                  [5000.,6.03e-10],
+                  [7000.,6.87e-10],
+                  [1e4,7.87e-10]])
+        SPLINE_DICT[splkey]=interp.interp1d(np.log10(kappa_array[:,0]),
+        np.log10(kappa_array[:,1]))
+    if isinstance(tk,float):
+        if tk<1.:
+            tk=1.
+        if tk>1e4:
+            tk=1e4
+    else:
+        tk[tk<1.]=1.
+        tk[tk>1e4]=1e4
+    return 10.**SPLINE_DICT[splkey](np.log10(tk))
+
+def kappa_10_eH(tk):
+    '''
+    Kappa in cm^3/sec for e-H collisions
+    Args:
+        tk, kinetic temperature (kelvin)
+    '''
+    splkey=('kappa_10','eH')
+    if not SPLINE_DICT.has_key(splkey):
+        kappa_eH_data=np.loadtxt('kappa_eH_table.dat')
+        SPLINE_DICT[splkey]=interp.interp1d(np.log10(kappa_eH_data[:,0]),
+        np.log10(kappa_eH_data[:,1]))
+    if isinstance(tk,float):
+        if tk<1.:
+            tk=1.
+        if tk>1e5:
+            tk=1e5
+    else:
+        tk[tk<1.]=1.
+        tk[tk>1e5]=1e5
+    return SPLINE_DICT[splkey](np.log10(tk))
+def kappa_10_pH(tk):
+    '''
+    Kappa in cm^3/sec for p-H collisions
+    Args:
+        tk, kinetic temperature (kelvin)
+    '''
+    splkey=('kappa_10','pH')
+    if not SPLINE_DICT.has_key(splkey):
+        kappah_pH_data=np.loadtxt('kappa_pH_table.dat')
+        SPLINE_DICT[splkey]=interp.interp1d(np.log10(kappa_pH_data[:,0]),
+        np.log10(kappa_pH_data[:,1]))
+    if isinstance(tk,float):
+        if tk<1.:
+            tk=1.
+        if tk>2e4:
+            tk=2e4
+        else:
+            tk[tk<1.]=1.
+            tk[tk>2e4]=2e4
+    return SPLINE_DICT[splkey](tk)
+
+def x_coll(tk,xe,z):
+    '''
+    collisional coupling constant
+    Args:
+        tk, kinetic temperature (kelvin)
+        xe, ionization fraction of Hydrogen and Helium I
+        z, redshift
+    '''
+    return 0.0628/TCMB0/(1.+z)/A10*(F_H*kappa_10_HH(tk)*(1.-xe)+xe\
+    *F_H*(kappa_10_eH(tk)+kappa_10_pH(tk)))
+
+
+
+def tau_GP(z,xe):
+    '''
+    Gunn-Peterson Optical depth in neutral IGM
+    Args:
+        z=redshift
+        xe=ionization fraction
+    '''
+    return 1.34288e-7/COSMO.Hz(z)*(1.-xe)*NH0_CM*(1.+z)**3.
+
+def s_alpha_tilde(tk,ts,z,xe):
+    '''
+    S_\alpha, fitted in Hirata 2006 Equation 40
+    Args:
+        tk, kinetic temperature (Kelvin)
+        ts, spin temperature (Kelvin)
+        xe, ionized fraction outside of HII regions
+        z, redshift
+    '''
+    taugp=tau_GP(z,xe)
+    xi=(1e-7*gaugp/tk/tk)**(1./3.)
+    return (1.0-0.0631789/tk+0.115995/tk/tk\
+    -0.401403/ts/tk+0.33643/ts/tk/tk)\
+    /(1.+2.98394*xi+1.53583*xi*xi+3.85289*xi*xi*xi)
+
+def tc_eff(tk,ts):
+    '''
+    effective color temperature
+    Hirata 2006 equation 42
+    args:
+        tk, kinetic temperature
+        ts, spin temperature
+    '''
+    return (1./tk+0.405535/tk*(1./ts-1./tk))**-1.
+
+def xalpha_over_jalpha(tk,ts,z,xe):
+    '''
+    Ly-alpha coupling constant/Ly-alpha flux
+    Args:
+        tk, kinetic temperature (kelvin)
+        ts, spin temperature (kelvin)
+        z, redshift
+        xe, ionization fraction
+    '''
+    return s_alpha_tilde(tk,ts,z,xe)*1.66e11/(1.+z)
+
+def pn_alpha(n):
+    '''
+    probability of a photon being absorbed at lyman-n transition is re-emitted
+    as a ly-alpha photon. 
+    '''
+    if isinstance(n,int):
+        if n<=30 and n>=0:
+            return LY_N_ALPHA_SWITCH[n]
+        else:
+            return 0.
+    elif isinstance(n,np.ndarray):
+        ouput=np.zeros_like(n)
+        selection=np.logical_and(n>=0,n<=30)
+        output[selection]=\
+        np.vectorize(lambda x: LY_N_ALPHA_SWITCH[int(x)])(n[selection])
+        return ouput
