@@ -6,7 +6,7 @@ import os
 import scipy.integrate as integrate
 import scipy.interpolate as interpolate
 from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
-from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0,NH0_CM
+from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0,NH0_CM,YP,KPC
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
@@ -417,7 +417,7 @@ def kappa_10_eH(tk):
     else:
         tk[tk<1.]=1.
         tk[tk>1e5]=1e5
-    return SPLINE_DICT[splkey](np.log10(tk))
+    return 10.**SPLINE_DICT[splkey](np.log10(tk))
 def kappa_10_pH(tk):
     '''
     Kappa in cm^3/sec for p-H collisions
@@ -437,7 +437,7 @@ def kappa_10_pH(tk):
     else:
         tk[tk<1.]=1.
         tk[tk>2e4]=2e4
-    return SPLINE_DICT[splkey](np.log10(tk))
+    return 10.**SPLINE_DICT[splkey](np.log10(tk))
 
 def x_coll(tk,xe,z):
     '''
@@ -447,8 +447,8 @@ def x_coll(tk,xe,z):
         xe, ionization fraction of Hydrogen and Helium I
         z, redshift
     '''
-    return 0.0628/TCMB0/(1.+z)/A10*(F_H*kappa_10_HH(tk)*(1.-xe)+xe\
-    *F_H*(kappa_10_eH(tk)+kappa_10_pH(tk)))
+    return 0.0628/TCMB0*(1.+z)/A10*(kappa_10_HH(tk)*(1.-xe)\
+    +xe*(kappa_10_eH(tk)+kappa_10_pH(tk)))*NH0_CM
 
 
 
@@ -544,4 +544,20 @@ def tspin(xc,xa,tk,tc,tcmb):
 
 
 def tc_eff(tk,ts):
+    '''
+    ly-alpha color temperature
+    '''
     return (1./tk+0.405535/tk*(1./ts-1./tk))**-1.
+
+
+def n_h(m,z):
+    '''
+    column density from the center of a halo.
+    (cm^-2)
+    Args:
+        m, halo mass
+        z, redshift
+    '''
+    rv=rVir(m,z)*1e2*1e3*KPC/(1.+z)/LITTLEH
+    return (m*COSMO.Ob(0.)/COSMO.Om(0.)*(MSOL/LITTLEH))/(1.25*PI*MP*rv**2.)\
+    *(1.-YP)/(1.-.75*YP)
