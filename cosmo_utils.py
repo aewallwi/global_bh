@@ -550,14 +550,15 @@ def tc_eff(tk,ts):
     return (1./tk+0.405535/tk*(1./ts-1./tk))**-1.
 
 
-def n_h(m,z):
+def n_h(m,z,cs=1.):
     '''
-    column density from the center of a halo.
+    column density from the center of a tophat halo.
     (cm^-2)
     Args:
         m, halo mass
         z, redshift
+        cs, concentration parameter
     '''
-    rv=rVir(m,z)*1e2*1e3*KPC/(1.+z)/LITTLEH
-    return (m*COSMO.Ob(0.)/COSMO.Om(0.)*(MSOL/LITTLEH))/(1.25*PI*MP*rv**2.)\
+    rval=rVir(m,z)*1e2*1e3*KPC/(1.+z)/LITTLEH/cs
+    return (m*COSMO.Ob(0.)/COSMO.Om(0.)*(MSOL/LITTLEH))/(1.25*PI*MP*rval**2.)\
     *(1.-YP)/(1.-.75*YP)
