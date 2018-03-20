@@ -7,7 +7,7 @@ from settings import N_INTERP_Z,N_INTERP_MBH,Z_INTERP_MAX,Z_INTERP_MIN,ERG
 from settings import M_INTERP_MAX,KPC,F_HE,F_H,YP,BARN,YR,EV,ERG,F21
 from settings import N_TSTEPS,E_HI_ION,E_HEI_ION,E_HEII_ION,SIGMAT
 from settings import KBOLTZMANN_KEV,NH0,NH0_CM,NHE0_CM,NHE0,C,LEDD
-from settings import N_INTERP_X,TCMB0,ARAD,ME
+from settings import N_INTERP_X,TCMB0,ARAD,ME,TCMB0
 from cosmo_utils import *
 import scipy.interpolate as interp
 import copy
@@ -99,7 +99,7 @@ def emissivity_xrays(z,E_x,obscured=True,**kwargs):
     else:
         return 0.
 
-def emissivity_uv(z,E_uv,**kwargs):
+def emissivity_uv(z,E_uv,mode='energy',**kwargs):
     '''
     emissivity in UV-photons from accreting black holes at redshift z
     in (eV)/sec/eV/(h/Mpc)^3
@@ -109,9 +109,15 @@ def emissivity_uv(z,E_uv,**kwargs):
         kwargs, model parameter dictionary
     '''
     power_select=np.sqrt(np.sign(E_uv-13.6),dtype=complex)
-    return 3.5e3*emissivity_xrays(z,2.,obscured=False,**kwargs)*(2500./912.)**(-.61)\
+    output=3.5e3*emissivity_xrays(z,2.,obscured=False,**kwargs)*(2500./912.)**(-.61)\
     *(E_uv/13.6)**(-0.61*np.imag(power_select)-1.71*(np.real(power_select)))\
     *kwargs['F_ESC']
+    if mode=='energy':
+        return output
+    elif mode=='number':
+        return output/E_uv
+
+
 
 
 
@@ -233,11 +239,14 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
     dlogx=np.log10(xray_axis[1]/xray_axis[0])
     Tks=np.zeros(ntimes)
     xes=np.zeros(ntimes)
+    xalphas=np.zeros(ntimes)
+    xcolls=np.zeros(ntimes)
     jxs=np.zeros(N_INTERP_X)#X-ray flux
-    jalphas=np.zeros(N_INTERP_X)#Lyman-Alpha flux
+    Jalphas=np.zeros(ntimes)#Lyman-Alpha flux
     jrad=np.zeros(N_INTERP_X)#background 21-cm brightness temperature
-    trads=np.zeros(ntimes)#21-cm background temperature
-    ts=np.zeros(ntimes)
+    Trads=np.zeros(ntimes)#21-cm background temperature
+    Tspins=np.zeros(ntimes)
+    Talphas=np.zeros(ntimes)
     tb=np.zeros(ntimes)
     if diagnostic:
         jx_matrix=[]
@@ -248,16 +257,30 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
     if verbose: print('Initialzing xe and Tk with recfast values.')
     xes[0]=interp.interp1d(recfast[:,0],recfast[:,1])(zhigh)
     Tks[0]=interp.interp1d(recfast[:,0],recfast[:,-1])(zhigh)
+    xcolls[0]=x_coll(Tks[0],xes[0],zaxis[0])
+    Talphas[0]=0.
+    Tspins[0]=tspin(xcolls[0],xalphas[0],Tks[0],Talphas[0],TCMB0/aaxis[0])
     if verbose: print('Initializing Interpolation.')
     init_interpolation_tables()
     print('Starting Evolution at z=%.2f, xe=%.2e, Tk=%.2f'%(zaxis[0],xes[0],Tks[0]))
     for tnum in range(1,len(taxis)):
         zval,tval,aval=zaxis[tnum-1],taxis[tnum-1],aaxis[tnum-1]
-        xe,Tk,qval=xes[tnum-1],Tks[tnum-1],q_ion[tnum-1]
+        xe,tk,qval=xes[tnum-1],Tks[tnum-1],q_ion[tnum-1]
+        tc=Talphas[tnum-1]
+        xalpha=xalphas[tnum-1]
+        xcoll=xcolls[tnum-1]
+        ts=Tspins[tnum-1]
+        tcmb=TCMB0/aval
         xrays=xray_axis*aaxis[0]/aval
         freqs=radio_axis*aaxis[0]/aval
         dz=zaxis[tnum]-zval
         if xe<1.:
+            #Compute Ly-alpha flux
+            jalphas[tnum]=np.array([integrate.quad(lambda x:
+            emissivity_uv(x,e_ly_n*(1.+x)/(1.+zval),mode='number')\
+            /COSMO.Ez(x),zval,zmax(zval,n))[0]*pn_alpha(n)\
+             for n in range(2,31)]).sum()\
+            *DH/aval**2./4./PI/(1e3*KPC*1e2)*LITTLEH**3.
             dtaus=-dz*(DH*1e3*KPC*1e2)/aval**2./COSMO.Ez(zval)\
             *(1.-(qval+(1.-qval)*xe))\
             *((1.-xe)*NH0_CM*sigma_HLike(xrays)\
@@ -290,26 +313,32 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
             g=lambda x:ionization_integrand(np.exp(x),xe,jxfunc)
             gamma_ion=integrate.quad(g,lxmin,lxmax)[0]
             dxe=(gamma_ion\
-            -alpha_A(Tks[tnum-1]/1e4)*xe**2.*NH0_CM/aval**3.*clumping_factor(zval))*dt
-            dTk_a=2.*Tk*aval*dz
+            -alpha_A(tk/1e4)*xe**2.*NH0_CM/aval**3.*clumping_factor(zval))*dt
+            dTk_a=2.*tk*aval*dz
             dTk_x=2./3./KBOLTZMANN_KEV/(1.+xe)*epsx*dt
-            dTk_i=-Tk*dxe/(1.+xe)
-            dTk_c=xe/(1.+xe+F_HE)*8.*SIGMAT*(TCMB0/aval-Tk)/3./ME/(C*1e3)\
-            *ARAD*(TCMB0/aval)**4.*dt*1e-4
+            dTk_i=-tk*dxe/(1.+xe)
+            dTk_c=xe/(1.+xe+F_HE)*8.*SIGMAT*(tcmb-tk)/3./ME/(C*1e3)\
+            *ARAD*(tcmb)**4.*dt*1e-4
             if verbose: print('dTk_a=%.2e,dTk_c=%.2e,dTk_x=%.2e,dTk_i=%.2e'\
             %(dTk_a,dTk_c,dTk_x,dTk_i))
-            Tks[tnum]=Tk+dTk_a+dTk_c+dTk_x+dTk_i
+            Tks[tnum]=tk+dTk_a+dTk_c+dTk_x+dTk_i
             xes[tnum]=xe+dxe
-            ts[tnum]=Tks[tnum]
+            xalphas[tnum]=xalpha_over_jalpha(Tks[tnum],ts,zval,xes[tnum])\
+            *jalphas[tnum]
+            Talphas[tnum]=tc_eff(Tks[tnum],ts)
+            Tspins[tnum]=tspin(xcolls[tnum],xalphas[tnum],
+            Tks[tnum],Talphas[tnum],TCMB0/avals+Trads[tnum])#include
+            # CMB coupling to radio background
+            #ts[tnum]=Tks[tnum]
             print('z=%.2f,Tk=%.2f,xe=%.2e,QHII=%.2f'%(zaxis[tnum],Tks[tnum],
             xes[tnum],q_ion[tnum]))
     for tnum in range(ntimes):
         tb[tnum]=27.*(1.-xes[tnum])*np.max([(1.-q_ion[tnum]),0.])\
-        *(1.-(TCMB0/aaxis[tnum]+trads[tnum])/ts[tnum])\
+        *(1.-(TCMB0/aaxis[tnum]+Trads[tnum])/Tspins[tnum])\
         *(COSMO.Ob(0.)*LITTLEH**2./0.023)*(0.15/COSMO.Om(0.)/LITTLEH**2.)\
         *(1./10./aaxis[tnum])**.5
     output={'t':taxis,'z':zaxis,'Tk':Tks,'xe':xes,'q_ion':q_ion,'trad':trads,
-    'ts':ts,'tb':tb}
+    'Ts':Tspins,'Tb':tb,'xalpha':xalphas,'jalpha':jalphas}
     if diagnostic:
         output['jxs']=np.array(jx_matrix)
         output['xrays']=np.array(xray_matrix)

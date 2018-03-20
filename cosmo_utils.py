@@ -6,12 +6,15 @@ import os
 import scipy.integrate as integrate
 import scipy.interpolate as interpolate
 from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
-from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10
+from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
 import scipy.interpolate as interp
 from settings import LY_N_ALPHA_SWITCH
+DIRNAME,_=os.path.split(os.path.abspath(__file__))
+
+
 #*********************************************************
 #utility functions
 #*********************************************************
@@ -197,7 +200,6 @@ def init_interpolation_tables():
     per ionization of H, He, HI, fraction of energy deposited in heating and
     fraction deposited in ionization.
     '''
-    dirname,filename=os.path.split(os.path.abspath(__file__))
     table_names=['x_int_tables/log_xi_-4.0.dat',
                    'x_int_tables/log_xi_-3.6.dat',
                    'x_int_tables/log_xi_-3.3.dat',
@@ -216,7 +218,7 @@ def init_interpolation_tables():
     SPLINE_DICT['xis']=np.array([1e-4,2.318e-4,4.677e-4,1.0e-3,2.318e-3,
     4.677e-3,1.0e-2,2.318e-2,4.677e-2,1e-1,.5,.9,.99,.999])
     for tname,xi in zip(table_names,SPLINE_DICT['xis']):
-        itable=np.loadtxt(dirname+'/'+tname,skiprows=3)
+        itable=np.loadtxt(DIRNAME+'/'+tname,skiprows=3)
         SPLINE_DICT[('f_ion',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,1])
         SPLINE_DICT[('f_heat',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,2])
         SPLINE_DICT[('f_exc',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,3])
@@ -228,11 +230,6 @@ def init_interpolation_tables():
         SPLINE_DICT[('min_e_kev',xi)]=(itable[:,0]/1e3).min()
         SPLINE_DICT[('max_e_kev',xi)]=(itable[:,0]/1e3).max()
 
-    '''
-    Next, load up the kappa tables.
-    '''
-    kappa_eH=np.loadtxt(dirname+'/kappa_eH_table.dat')
-    kappa_pH=np.loadtxt(dirname+'/kappa_pH_table.dat')
 
 
 def interp_heat_val(e_kev,xi,mode='f_ion'):
@@ -391,7 +388,7 @@ def kappa_10_HH(tk):
                   [1e4,7.87e-10]])
         SPLINE_DICT[splkey]=interp.interp1d(np.log10(kappa_array[:,0]),
         np.log10(kappa_array[:,1]))
-    if isinstance(tk,float):
+    if isinstance(tk,float) or isinstance(tk,np.float64):
         if tk<1.:
             tk=1.
         if tk>1e4:
@@ -409,10 +406,10 @@ def kappa_10_eH(tk):
     '''
     splkey=('kappa_10','eH')
     if not SPLINE_DICT.has_key(splkey):
-        kappa_eH_data=np.loadtxt('kappa_eH_table.dat')
+        kappa_eH_data=np.loadtxt(DIRNAME+'/kappa_eH_table.dat')
         SPLINE_DICT[splkey]=interp.interp1d(np.log10(kappa_eH_data[:,0]),
         np.log10(kappa_eH_data[:,1]))
-    if isinstance(tk,float):
+    if isinstance(tk,float) or isinstance(tk,np.float64):
         if tk<1.:
             tk=1.
         if tk>1e5:
@@ -429,18 +426,18 @@ def kappa_10_pH(tk):
     '''
     splkey=('kappa_10','pH')
     if not SPLINE_DICT.has_key(splkey):
-        kappah_pH_data=np.loadtxt('kappa_pH_table.dat')
+        kappa_pH_data=np.loadtxt(DIRNAME+'/kappa_pH_table.dat')
         SPLINE_DICT[splkey]=interp.interp1d(np.log10(kappa_pH_data[:,0]),
         np.log10(kappa_pH_data[:,1]))
-    if isinstance(tk,float):
+    if isinstance(tk,float) or isinstance(tk,np.float64):
         if tk<1.:
             tk=1.
         if tk>2e4:
             tk=2e4
-        else:
-            tk[tk<1.]=1.
-            tk[tk>2e4]=2e4
-    return SPLINE_DICT[splkey](tk)
+    else:
+        tk[tk<1.]=1.
+        tk[tk>2e4]=2e4
+    return SPLINE_DICT[splkey](np.log10(tk))
 
 def x_coll(tk,xe,z):
     '''
@@ -503,7 +500,7 @@ def xalpha_over_jalpha(tk,ts,z,xe):
 def pn_alpha(n):
     '''
     probability of a photon being absorbed at lyman-n transition is re-emitted
-    as a ly-alpha photon. 
+    as a ly-alpha photon.
     '''
     if isinstance(n,int):
         if n<=30 and n>=0:
@@ -516,3 +513,35 @@ def pn_alpha(n):
         output[selection]=\
         np.vectorize(lambda x: LY_N_ALPHA_SWITCH[int(x)])(n[selection])
         return ouput
+
+def zmax(z,n):
+    '''
+    return maximum redshift for Ly-alpha photons
+    '''
+    return (1.+z)*(1.-(1.+n)**-2.)/(1.-n**-2.)-1.
+
+def e_ly_n(n):
+    '''
+    energy (in eV) for n->1 lyman series transition
+    '''
+    return E_HI_ION*1e3*(1.-n**-2.)
+
+def tspin(xc,xa,tk,tc,tcmb):
+    '''
+    spin temperature from couplign constants
+    Args:
+        xc, collisional coupling
+        xa, ly-alpha coupling
+        tk, kinetic temperature
+        tc, ly-alpha color temperature
+        tcmb, cmb temperature
+    '''
+    #Only do this if there is a ly-alpha background
+    if xa>0.:
+        return (xc+xa+1)/(xc/tk+xa/tc+1./tcmb)
+    else:
+        return (xc+1)/(xc/tk+1./tcmb)
+
+
+def tc_eff(tk,ts):
+    return (1./tk+0.405535/tk*(1./ts-1./tk))**-1.
