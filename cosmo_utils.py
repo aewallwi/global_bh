@@ -6,7 +6,7 @@ import os
 import scipy.integrate as integrate
 import scipy.interpolate as interpolate
 from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
-from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0
+from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0,NH0_CM
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
@@ -471,7 +471,7 @@ def s_alpha_tilde(tk,ts,z,xe):
         z, redshift
     '''
     taugp=tau_GP(z,xe)
-    xi=(1e-7*gaugp/tk/tk)**(1./3.)
+    xi=(1e-7*taugp/tk/tk)**(1./3.)
     return (1.0-0.0631789/tk+0.115995/tk/tk\
     -0.401403/ts/tk+0.33643/ts/tk/tk)\
     /(1.+2.98394*xi+1.53583*xi*xi+3.85289*xi*xi*xi)

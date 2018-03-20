@@ -275,12 +275,17 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
         freqs=radio_axis*aaxis[0]/aval
         dz=zaxis[tnum]-zval
         if xe<1.:
-            #Compute Ly-alpha flux
-            jalphas[tnum]=np.array([integrate.quad(lambda x:
-            emissivity_uv(x,e_ly_n*(1.+x)/(1.+zval),mode='number')\
-            /COSMO.Ez(x),zval,zmax(zval,n))[0]*pn_alpha(n)\
-             for n in range(2,31)]).sum()\
-            *DH/aval**2./4./PI/(1e3*KPC*1e2)*LITTLEH**3.
+        #Compute Ly-alpha flux
+        #jalphas[tnum]=np.array([integrate.quad(lambda x:
+        #emissivity_uv(x,e_ly_n*(1.+x)/(1.+zaxis[tnum]),mode='number')\
+        #/COSMO.Ez(x),zval,zmax(zaxis[tnum],n))[0]*pn_alpha(n)\
+        #*DH/aval**2./4./PI/(1e3*KPC*1e2)*LITTLEH**3.
+            for n in range(2,31):
+                Jalphas[tnum]+=integrate.quad(lambda x:
+                emissivity_uv(x,e_ly_n(n)*(1.+x)/(1.+zaxis[tnum]),mode='number',
+                **kwargs)/COSMO.Ez(x),zaxis[tnum],zmax(zaxis[tnum],n))[0]\
+                *pn_alpha(n)
+            Jalphas[tnum]*=DH/aval**2./4./PI/(1e3*KPC*1e2)*LITTLEH**3.
             dtaus=-dz*(DH*1e3*KPC*1e2)/aval**2./COSMO.Ez(zval)\
             *(1.-(qval+(1.-qval)*xe))\
             *((1.-xe)*NH0_CM*sigma_HLike(xrays)\
@@ -300,7 +305,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
             jrad=(jrad*aval**3.\
             -emissivity_radio(zval,freqs,**kwargs)*DH/4./PI*aval/COSMO.Ez(zval)\
             /(1e3*KPC)**2.*LITTLEH**3.*dz)/aaxis[tnum]**3.
-            trads[tnum]=interp.interp1d(freqs,jrad*(C*1e3/freqs)**2./2./KBOLTZMANN)\
+            Trads[tnum]=interp.interp1d(freqs,jrad*(C*1e3/freqs)**2./2./KBOLTZMANN)\
             (F21)
             jxfunc=interp.interp1d(xrays,jxs,fill_value=0.,
             kind='linear',bounds_error=False)
@@ -324,10 +329,10 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
             Tks[tnum]=tk+dTk_a+dTk_c+dTk_x+dTk_i
             xes[tnum]=xe+dxe
             xalphas[tnum]=xalpha_over_jalpha(Tks[tnum],ts,zval,xes[tnum])\
-            *jalphas[tnum]
+            *Jalphas[tnum]
             Talphas[tnum]=tc_eff(Tks[tnum],ts)
             Tspins[tnum]=tspin(xcolls[tnum],xalphas[tnum],
-            Tks[tnum],Talphas[tnum],TCMB0/avals+Trads[tnum])#include
+            Tks[tnum],Talphas[tnum],TCMB0/aaxis[tnum]+Trads[tnum])#include
             # CMB coupling to radio background
             #ts[tnum]=Tks[tnum]
             print('z=%.2f,Tk=%.2f,xe=%.2e,QHII=%.2f'%(zaxis[tnum],Tks[tnum],
@@ -337,8 +342,8 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
         *(1.-(TCMB0/aaxis[tnum]+Trads[tnum])/Tspins[tnum])\
         *(COSMO.Ob(0.)*LITTLEH**2./0.023)*(0.15/COSMO.Om(0.)/LITTLEH**2.)\
         *(1./10./aaxis[tnum])**.5
-    output={'t':taxis,'z':zaxis,'Tk':Tks,'xe':xes,'q_ion':q_ion,'trad':trads,
-    'Ts':Tspins,'Tb':tb,'xalpha':xalphas,'jalpha':jalphas}
+    output={'T':taxis,'Z':zaxis,'Tk':Tks,'Xe':xes,'Q':q_ion,'Trad':Trads,
+    'Ts':Tspins,'Tb':tb,'X_alpha':xalphas,'Jalpha':Jalphas}
     if diagnostic:
         output['jxs']=np.array(jx_matrix)
         output['xrays']=np.array(xray_matrix)
