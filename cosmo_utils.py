@@ -7,6 +7,7 @@ import scipy.integrate as integrate
 import scipy.interpolate as interpolate
 from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
 from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0,NH0_CM,YP,KPC
+from settings import POP_III_ION,POP_II_ION
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
@@ -92,6 +93,41 @@ def tvir2mvir(t,z,mu=1.22):
         dark-matter halo mass corresponding to virial temperature tvir in Msol/h
     '''
     return 1e8*(t/tvir(1e8,z,mu))**(3./2.)
+
+def stellar_spectrum(E_uv,**kwargs):
+    splkey=('stellar_spectrum',kwargs['POP'])
+    if not SPLINE_DICT.has_key(splkey):
+        stellar_data=np.loadtxt(DIRNAME+'/stellar_spectra.dat')
+        SPLINE_DICT[('stellar_spectrum','II')]=\
+        np.vstack([stellar_data[:,0],
+        stellar_data[:,1]*POP_II_ION,stellar_data[:,2]]).T
+        SPLINE_DICT[('stellar_spectrum','III')]=\
+        np.vstack([stellar_data[:,0],
+        stellar_data[:,3]*POP_III_ION,stellar_data[:,4]]).T
+    #Figure out the order of the transition.
+    nval=np.floor(1./np.sqrt(E_uv/(1e3*E_HI_ION)-1.)).astype(int)
+    E_n=E_HI_ION*(1.-1./nval**2.)
+    E_np=E_HI_ION*(1.-1./(nval+1)**2.)
+    if isinstance(E_uv,float):
+        if nval<2 or nval>22:
+            return 0.
+        else:
+            norm_factor=SPLINE_DICT[splkey][nval-2,1]
+            alpha=SPLINE_DICT[splkey][nval-2,2]
+            return norm_factor*(1.+alpha)\
+            /(E_np**(1.+alpha)-E_n**(1.+alpha))*E_uv**alpha
+    else:
+        output=np.zeros_like(E_uv)
+        select=np.logical_and(nval>=2,nval<=22)
+        norm_factor=SPLINE_DICT[splkey][nval[select]-2,1]
+        alpha=SPLINE_DICT[splkey][nval[select]-2,2]
+        output[select]=norm_factor*(1.+alpha)\
+        /(E_np[select]**(1.+alpha)-E_n[select]**(1.+alpha))*E_uv**alpha
+        return output
+
+
+
+
 
 
 def vVir(m,z):
@@ -199,6 +235,8 @@ def init_interpolation_tables():
     Initialize interpolation tables for number of ionizing electrons produced
     per ionization of H, He, HI, fraction of energy deposited in heating and
     fraction deposited in ionization.
+    Credit Mesinger 2011 for interpolation tables
+    https://github.com/andreimesinger/21cmFAST
     '''
     table_names=['x_int_tables/log_xi_-4.0.dat',
                    'x_int_tables/log_xi_-3.6.dat',
@@ -274,6 +312,15 @@ def interp_heat_val(e_kev,xi,mode='f_ion'):
 
 
 def heating_integrand(ex,xe,jxf):
+    '''
+    energy injected
+    per baryon for X-rays between ex and
+    ex+dex
+    Args:
+        ex, x-ray energy
+        xe, ionized fraction
+        jxf,X-ray intensity function (keV/sec)/keV/cm^2/sr
+    '''
     pfactor=4.*PI*jxf(ex)
 
     ex_hi=np.max([ex-E_HI_ION,0.])
@@ -292,6 +339,32 @@ def heating_integrand(ex,xe,jxf):
 def ionization_integrand(ex,xe,jxf):
     pfactor = 4.*PI*jxf(ex)
     return pfactor*ion_sum(ex,xe)
+
+def xray_lyalpha_integrand(ex,xe,jxf):
+    '''
+    number of lyman alpha photons emitted
+    per baryon for X-rays between ex and
+    ex+dex
+    Args:
+        ex, x-ray energy
+        xe, ionized fraction
+        jxf,X-ray intensity function (keV/sec)/keV/cm^2/sr
+    Returns: number of lyman alpha photons emitted per baryon
+    '''
+    pfactor=4.*PI*jxf(ex)
+
+    ex_hi=np.max([ex-E_HI_ION,0.])
+    ex_hei=np.max([ex-E_HEI_ION,0.])
+    ex_heii=np.max([ex-E_HEII_ION,0.])
+
+    hi_rate=(1.-xe)*sigma_HLike(ex)*F_H\
+    *interp_heat_val(ex_hi,xe,'n_Lya')
+    hei_rate=(1.-xe)*sigma_HeI(ex)*F_HE\
+    *interp_heat_val(ex_hei,xe,'n_Lya')
+    heii_rate=xe*sigma_HLike(ex,z=2.)*F_HE\
+    *interp_heat_val(ex_heii,xe,'n_Lya')
+
+    return pfactor*(hi_rate+hei_rate+heii_rate)
 
 
 
@@ -355,6 +428,8 @@ def kappa_10_HH(tk):
     in cm^3/sec
     Args:
         tk, kinetic temperature (Kelvin)
+    Credit Mesinger 2011 for interpolation tables
+    https://github.com/andreimesinger/21cmFAST
     '''
     splkey=('kappa_10','HH')
     if not SPLINE_DICT.has_key(splkey):
@@ -403,6 +478,8 @@ def kappa_10_eH(tk):
     Kappa in cm^3/sec for e-H collisions
     Args:
         tk, kinetic temperature (kelvin)
+    Credit Mesinger 2011 for interpolation tables
+    https://github.com/andreimesinger/21cmFAST
     '''
     splkey=('kappa_10','eH')
     if not SPLINE_DICT.has_key(splkey):
@@ -423,6 +500,8 @@ def kappa_10_pH(tk):
     Kappa in cm^3/sec for p-H collisions
     Args:
         tk, kinetic temperature (kelvin)
+    Credit Mesinger 2011 for interpolation tables
+    https://github.com/andreimesinger/21cmFAST
     '''
     splkey=('kappa_10','pH')
     if not SPLINE_DICT.has_key(splkey):
@@ -476,6 +555,13 @@ def s_alpha_tilde(tk,ts,z,xe):
     -0.401403/ts/tk+0.33643/ts/tk/tk)\
     /(1.+2.98394*xi+1.53583*xi*xi+3.85289*xi*xi*xi)
 
+def s_alpha(tk,ts,z,xe):
+    '''
+    s_apha
+    '''
+    return s_alpha_tilde(tk,ts,z,xe)*(1./tc_eff(tk,ts)-1./ts)\
+    /(1./tk-1./ts)
+
 def tc_eff(tk,ts):
     '''
     effective color temperature
@@ -495,7 +581,7 @@ def xalpha_over_jalpha(tk,ts,z,xe):
         z, redshift
         xe, ionization fraction
     '''
-    return s_alpha_tilde(tk,ts,z,xe)*1.66e11/(1.+z)
+    return s_alpha(tk,ts,z,xe)*1.66e11/(1.+z)
 
 def pn_alpha(n):
     '''

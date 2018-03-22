@@ -7,7 +7,7 @@ from settings import N_INTERP_Z,N_INTERP_MBH,Z_INTERP_MAX,Z_INTERP_MIN,ERG
 from settings import M_INTERP_MAX,KPC,F_HE,F_H,YP,BARN,YR,EV,ERG,F21
 from settings import N_TSTEPS,E_HI_ION,E_HEI_ION,E_HEII_ION,SIGMAT
 from settings import KBOLTZMANN_KEV,NH0,NH0_CM,NHE0_CM,NHE0,C,LEDD
-from settings import N_INTERP_X,TCMB0,ARAD,ME,TCMB0,HPLANCK_EV
+from settings import N_INTERP_X,TCMB0,ARAD,ME,TCMB0,HPLANCK_EV,NB0_CM
 from cosmo_utils import *
 import scipy.interpolate as interp
 import copy
@@ -17,7 +17,29 @@ import camb
 import os
 from settings import DEBUG
 
-
+def drho_dt(z,**kwargs):
+    '''
+    time-derivative of collapsed matter density in msolar h^2/Mpc^3
+    at redshift z for **kwargs model
+    '''
+    splkey=('drho_dt','gridded')
+    if not SPLINE_DICT.has_key(splkey):
+        print('Calculating Collapsed Fraction')
+        taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
+        1.1*COSMO.age(kwargs['ZMIN_STARS']),kwargs['NTIMES'])
+        zaxis=COSMO.age(taxis,inverse=True)
+        rho_halos=np.zeros_like(zaxis)
+        for tnum in range(1,len(taxis)):
+            g=lambda x: massfunc(10.**x,zaxis[tnum])*10.**x
+            if kwargs['MASSLIMUNITS']=='KELVIN':
+                limlow=np.log10(tvir2mvir(kwargs['TMIN_STARS'],
+                zaxis[tnum]))
+            else:
+                limlow=np.log10(kwargs['MMIN_STARS'])
+            rho_halos[tnum]=integrate.quad(g,limlow,20.)[0]
+        SPLINE_DICT[splkey]\
+        =interp.UnivariateSpline(taxis,rho_halos).derivative()
+    return SPLINE_DICT[splkey](COSMO.age(z,inverse=True))
 
 def rho_bh(z,mode='both',**kwargs):
     '''
@@ -111,10 +133,25 @@ def emissivity_uv(z,E_uv,mode='energy',obscured=True,**kwargs):
     power_select=np.sqrt(np.sign(E_uv-13.6),dtype=complex)
     output=3.5e3*emissivity_xrays(z,2.,obscured=False,**kwargs)*(2500./912.)**(-.61)\
     *(E_uv/13.6)**(-0.61*np.imag(power_select)-1.71*(np.real(power_select)))
+    #add stellar contribution
     if mode=='number':
         output=output/E_uv
     if obscured:
         output=output*kwargs['F_ESC']
+    return output
+
+def emissivity_lyalpha_stars(z,E_uv,mode='number',**kwargs):
+    '''
+    Number of photons per second per frequency interval emitted from stars
+    between 912 Angstroms and Ly-alpha transition
+    Usese Barkana 2005 emissivity model with interpolation table from 21cmFAST
+    Args:
+        E_uv,photon energy (eV)
+    '''
+    output=drho_dt(z,**kwargs)*kwargs['F_STAR']*COSMO.Ob(0.)*MSOL/MP\
+    *(1.-.75*YP)*stellar_spectrum(E_uv,**kwargs)
+    if mode=='energy':
+        output=output*E_uv
     return output
 
 
@@ -283,8 +320,10 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
         #*DH/aval**2./4./PI/(1e3*KPC*1e2)*LITTLEH**3.
             for n in range(2,31):
                 Jalphas[tnum]=Jalphas[tnum]+integrate.quad(lambda x:
-                emissivity_uv(x,e_ly_n(n)*(1.+x)/(1.+zaxis[tnum]),mode='number',
-                obscured=False,**kwargs)/COSMO.Ez(x),zaxis[tnum],
+                (emissivity_uv(x,e_ly_n(n)*(1.+x)/(1.+zaxis[tnum]),mode='number',
+                obscured=False,**kwargs)\
+                +emissivity_lyalpha_stars(x,e_ly_n(n)*(1.+x)/(1.+zaxis[tnum]),
+                mode='number',**kwargs))/COSMO.Ez(x),zaxis[tnum],
                 zmax(zaxis[tnum],n))[0]*pn_alpha(n)
             Jalphas[tnum]=Jalphas[tnum]*DH/aval**2./4./PI\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.*HPLANCK_EV
@@ -321,6 +360,11 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
             gamma_ion=integrate.quad(g,lxmin,lxmax)[0]
             dxe=(gamma_ion\
             -alpha_A(tk/1e4)*xe**2.*NH0_CM/aval**3.*clumping_factor(zval))*dt
+            #Compute secondary Ly-alpha photons from X-rays
+            g=lambda x:xray_lyalpha_integrand(np.exp(x),x,jxfunc)
+            Jalphas[tnum]=Jalphas[tnum]+integrate.quad(g,lxmin,lxmax)[0]\
+            *(C*1e5)/4./PI/COSMO.Ez(zaxis[tnum])*NB0_CM/aaxis[tnum]\
+            /e_ly_n(2.)*HPLANCK_EV*1e9*YR*TH
             dTk_a=2.*tk*aval*dz
             dTk_x=2./3./KBOLTZMANN_KEV/(1.+xe)*epsx*dt
             dTk_i=-tk*dxe/(1.+xe)
