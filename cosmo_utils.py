@@ -94,7 +94,8 @@ def tvir2mvir(t,z,mu=1.22):
     '''
     return 1e8*(t/tvir(1e8,z,mu))**(3./2.)
 
-def stellar_spectrum(E_uv,**kwargs):
+def stellar_spectrum(E_uv_in,**kwargs):
+    E_uv=E_uv_in/(.75*1e3*E_HI_ION)#Units of ly-alpha energy
     splkey=('stellar_spectrum',kwargs['POP'])
     if not SPLINE_DICT.has_key(splkey):
         stellar_data=np.loadtxt(DIRNAME+'/stellar_spectra.dat')
@@ -105,16 +106,18 @@ def stellar_spectrum(E_uv,**kwargs):
         np.vstack([stellar_data[:,0],
         stellar_data[:,3]*POP_III_ION,stellar_data[:,4]]).T
     #Figure out the order of the transition.
-    nval=np.floor(1./np.sqrt(E_uv/(1e3*E_HI_ION)-1.)).astype(int)
-    E_n=E_HI_ION*(1.-1./nval**2.)
-    E_np=E_HI_ION*(1.-1./(nval+1)**2.)
+    nval=np.floor(1./np.sqrt(1.-E_uv*.75)).astype(int)
+    #print nval
+    E_n=4.*(1.-1./nval**2.)/3.
+    E_np=4.*(1.-1./(nval+1)**2.)/3.
+    #print SPLINE_DICT[splkey]
     if isinstance(E_uv,float):
         if nval<2 or nval>22:
             return 0.
         else:
             norm_factor=SPLINE_DICT[splkey][nval-2,1]
             alpha=SPLINE_DICT[splkey][nval-2,2]
-            return norm_factor*(1.+alpha)\
+            output=norm_factor*(1.+alpha)\
             /(E_np**(1.+alpha)-E_n**(1.+alpha))*E_uv**alpha
     else:
         output=np.zeros_like(E_uv)
@@ -123,8 +126,8 @@ def stellar_spectrum(E_uv,**kwargs):
         alpha=SPLINE_DICT[splkey][nval[select]-2,2]
         output[select]=norm_factor*(1.+alpha)\
         /(E_np[select]**(1.+alpha)-E_n[select]**(1.+alpha))*E_uv**alpha
-        return output
-
+    #convert from 1/Ly-alpha energy to 1/energy (eV)
+    return output/(E_HI_ION*1e3*.75)
 
 
 
@@ -581,7 +584,7 @@ def xalpha_over_jalpha(tk,ts,z,xe):
         z, redshift
         xe, ionization fraction
     '''
-    return s_alpha(tk,ts,z,xe)*1.66e11/(1.+z)
+    return s_alpha_tilde(tk,ts,z,xe)*1.66e11/(1.+z)
 
 def pn_alpha(n):
     '''

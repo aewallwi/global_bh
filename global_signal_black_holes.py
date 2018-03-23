@@ -17,19 +17,19 @@ import camb
 import os
 from settings import DEBUG
 
-def drho_dt(z,**kwargs):
+def rho_stellar(z,mode='derivative',**kwargs):
     '''
     time-derivative of collapsed matter density in msolar h^2/Mpc^3
     at redshift z for **kwargs model
     '''
-    splkey=('drho_dt','gridded')
-    if not SPLINE_DICT.has_key(splkey):
+    splkey=('rho','coll')+dict2tuple(kwargs)
+    if not SPLINE_DICT.has_key(splkey+('integral','stellar')):
         print('Calculating Collapsed Fraction')
         taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
         1.1*COSMO.age(kwargs['ZMIN_STARS']),kwargs['NTIMES'])
         zaxis=COSMO.age(taxis,inverse=True)
         rho_halos=np.zeros_like(zaxis)
-        for tnum in range(1,len(taxis)):
+        for tnum in range(len(taxis)):
             g=lambda x: massfunc(10.**x,zaxis[tnum])*10.**x
             if kwargs['MASSLIMUNITS']=='KELVIN':
                 limlow=np.log10(tvir2mvir(kwargs['TMIN_STARS'],
@@ -37,9 +37,16 @@ def drho_dt(z,**kwargs):
             else:
                 limlow=np.log10(kwargs['MMIN_STARS'])
             rho_halos[tnum]=integrate.quad(g,limlow,20.)[0]
-        SPLINE_DICT[splkey]\
-        =interp.UnivariateSpline(taxis,rho_halos).derivative()
-    return SPLINE_DICT[splkey](COSMO.age(z,inverse=True))
+        SPLINE_DICT[splkey+('integral','stellar')]\
+        =interp.UnivariateSpline(taxis,np.log(rho_halos))
+        SPLINE_DICT[splkey+('derivative','stellar')]\
+        =interp.UnivariateSpline(taxis,np.log(rho_halos)).derivative()
+    if mode=='integral':
+        return np.exp(SPLINE_DICT[splkey+(mode,'stellar')](COSMO.age(z)))
+    else:
+        return SPLINE_DICT[splkey+(mode,'stellar')](COSMO.age(z))\
+        *rho_stellar(z,mode='integral',**kwargs)
+
 
 def rho_bh(z,mode='both',**kwargs):
     '''
@@ -113,7 +120,8 @@ def emissivity_xrays(z,E_x,obscured=True,**kwargs):
     if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN']:
         output=2.322e48*(kwargs['FX']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
         *(rho_bh(z,**kwargs)/1e4)*(1.-kwargs['ALPHA_X'])\
-        /(10.**(1.-kwargs['ALPHA_X'])-2.**(1.-kwargs['ALPHA_X']))
+        /(10.**(1.-kwargs['ALPHA_X'])-2.**(1.-kwargs['ALPHA_X']))\
+        *np.exp(-E_x/300.)#include 300 keV exponential cutoff typical of AGN
         if obscured:
             output=output*np.exp(-10.**kwargs['LOG10_N']*(F_H*sigma_HLike(E_x)\
             +F_HE/F_H*sigma_HeI(E_x)))
@@ -148,12 +156,32 @@ def emissivity_lyalpha_stars(z,E_uv,mode='number',**kwargs):
     Args:
         E_uv,photon energy (eV)
     '''
-    output=drho_dt(z,**kwargs)*kwargs['F_STAR']*COSMO.Ob(0.)*MSOL/MP\
-    *(1.-.75*YP)*stellar_spectrum(E_uv,**kwargs)
+    output=rho_stellar(z,mode='derivative',**kwargs)\
+    *kwargs['F_STAR']*COSMO.Ob(0.)/COSMO.Om(0.)*MSOL/MP\
+    *(1.-.75*YP)*stellar_spectrum(E_uv,**kwargs)/YR/1e9#convert from per Gyr to
+    #pwer second
     if mode=='energy':
         output=output*E_uv
     return output
 
+def emissivity_xrays_stars(z,E_x,obscured=True,**kwargs):
+    '''
+    X-ray emissivity for stellar mass black holes in XRB at redshift z
+    in (keV)/sec/keV/(h/Mpc)^3
+
+    use 3e39 erg/sec *f_X*(msolar/yr)^-1 X-ray emissivit (see mesinger 2011).
+    '''
+    if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN_STARS']:
+        output=rho_stellar(z,mode='derivative',**kwargs)/1e9\
+        *kwargs['F_STAR']*COSMO.Ob(0.)/COSMO.Om(0.)*kwargs['FX_STARS']*6.242e8*3e39/LITTLEH\
+        *(1.-kwargs['ALPHA_X_STARS'])/(8.**(1.-kwargs['ALPHA_X_STARS'])\
+        -0.5**(1.-kwargs['ALPHA_X_STARS']))
+        if obscured:
+            output=output*np.exp(-10.**kwargs['LOG10_N_STARS']*(F_H*sigma_HLike(E_x)\
+            +F_HE/F_H*sigma_HeI(E_x)))
+        return output
+    else:
+        return 0.
 
 
 
@@ -281,6 +309,9 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
     xcolls=np.zeros(ntimes)
     jxs=np.zeros(N_INTERP_X)#X-ray flux
     Jalphas=np.zeros(ntimes)#Lyman-Alpha flux
+    Jalphas_stars=np.zeros(ntimes)
+    Jxrays=np.zeros(ntimes)
+    Jxrays_stars=np.zeros(ntimes)
     jrad=np.zeros(N_INTERP_X)#background 21-cm brightness temperature
     Trads=np.zeros(ntimes)#21-cm background temperature
     Tspins=np.zeros(ntimes)
@@ -320,12 +351,18 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
         #*DH/aval**2./4./PI/(1e3*KPC*1e2)*LITTLEH**3.
             for n in range(2,31):
                 Jalphas[tnum]=Jalphas[tnum]+integrate.quad(lambda x:
-                (emissivity_uv(x,e_ly_n(n)*(1.+x)/(1.+zaxis[tnum]),mode='number',
-                obscured=False,**kwargs)\
-                +emissivity_lyalpha_stars(x,e_ly_n(n)*(1.+x)/(1.+zaxis[tnum]),
-                mode='number',**kwargs))/COSMO.Ez(x),zaxis[tnum],
+                emissivity_uv(x,e_ly_n(n)*(1.+x)/(1.+zaxis[tnum]),mode='number',
+                obscured=False,**kwargs)/COSMO.Ez(x),zaxis[tnum],
                 zmax(zaxis[tnum],n))[0]*pn_alpha(n)
-            Jalphas[tnum]=Jalphas[tnum]*DH/aval**2./4./PI\
+                Jalphas_stars[tnum]=Jalphas_stars[tnum]+integrate.quad(lambda x:
+                emissivity_lyalpha_stars(x,e_ly_n(n)*(1.+x)/(1.+zaxis[tnum]),
+                mode='number',**kwargs)/COSMO.Ez(x),zaxis[tnum],
+                zmax(zaxis[tnum],n))[0]*pn_alpha(n)
+
+            Jalphas[tnum]=kwargs['ALPHA_FACTOR']\
+            *Jalphas[tnum]*DH/aval**2./4./PI\
+            /(1e3*KPC*1e2)**2.*LITTLEH**3.*HPLANCK_EV
+            Jalphas_stars[tnum]=Jalphas_stars[tnum]*DH/aval**2./4./PI\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.*HPLANCK_EV
             dtaus=-dz*(DH*1e3*KPC*1e2)/aval**2./COSMO.Ez(zval)\
             *(1.-(qval+(1.-qval)*xe))\
@@ -335,7 +372,9 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
             dtaus[xrays<kwargs['EX_MIN']]=9e99
             #subtract emissivity since dz is negative
             jxs=(jxs*aval**3.\
-            -emissivity_xrays(zval,xrays,obscured=True,**kwargs)*DH/4./PI*aval/COSMO.Ez(zval)\
+            -(emissivity_xrays(zval,xrays,**kwargs)+
+              emissivity_xrays_stars(zval,xrays,**kwargs))\
+            *DH/4./PI*aval/COSMO.Ez(zval)\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.*dz)\
             *np.exp(-dtaus)/aaxis[tnum]**3.
             if diagnostic:
@@ -375,7 +414,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
             Tks[tnum]=tk+dTk_a+dTk_c+dTk_x+dTk_i
             xes[tnum]=xe+dxe
             xalphas[tnum]=xalpha_over_jalpha(Tks[tnum],ts,zval,xes[tnum])\
-            *Jalphas[tnum]
+            *(Jalphas[tnum]+Jalphas_stars[tnum])
             Talphas[tnum]=tc_eff(Tks[tnum],ts)
             xcolls[tnum]=x_coll(Tks[tnum],xes[tnum],zaxis[tnum])
             Tspins[tnum]=tspin(xcolls[tnum],xalphas[tnum],
@@ -390,7 +429,8 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
         *(COSMO.Ob(0.)*LITTLEH**2./0.023)*(0.15/COSMO.Om(0.)/LITTLEH**2.)\
         *(1./10./aaxis[tnum])**.5
     output={'T':taxis,'Z':zaxis,'Tk':Tks,'Xe':xes,'Q':q_ion,'Trad':Trads,
-    'Ts':Tspins,'Tb':tb,'Xalpha':xalphas,'Tc':Talphas,'Jalpha':Jalphas,'Xcoll':xcolls}
+    'Ts':Tspins,'Tb':tb,'Xalpha':xalphas,'Tc':Talphas,
+    'Jalpha':Jalphas,'Xcoll':xcolls,'Jalpha*':Jalphas_stars}
     if diagnostic:
         output['jxs']=np.array(jx_matrix)
         output['xrays']=np.array(xray_matrix)

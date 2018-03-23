@@ -54,6 +54,8 @@ NH0=COSMO.rho_b(0.)*(1e3)**3.*MSOL/MP*(1.-YP)/LITTLEH
 NH0_CM=NH0/(1e5*KPC)**3.*LITTLEH**3.
 NHE0=NH0*YP/4./(1.-YP)
 NHE0_CM=NH0_CM*YP/4./(1.-YP)
+NB0=NH0+NHE0
+NB0_CM=NH0_CM+NHE0_CM
 LY_N_ALPHA_SWITCH={0:1.,
                    1:1.,
                    2:1.,
@@ -87,3 +89,5 @@ LY_N_ALPHA_SWITCH={0:1.,
                    30:0.3590}#dictionary returning
                    #fraction of Ly-n photons re-emitted
                    #as Ly-alpha photons.
+POP_II_ION=4361
+POP_III_ION=44021
