@@ -241,6 +241,17 @@ def ndot_uv(z,E_low=13.6,E_high=np.infty,**kwargs):
     return (emissivity_uv(z,E_low,**kwargs)\
     -emissivity_uv(z,E_high,**kwargs))/(1.7)
 
+def ndot_uv_stars(z,**kwargs):
+    '''
+    number of ionizing photons per second per (h/Mpc)^3
+    emitted at redshift z
+    Args:
+        z, redshift
+        kwargs, model parameters
+    '''
+    return kwargs['ZETA_ION']*rho_stellar(z,mode='derivative',**kwargs)\
+    *MSOL/MP/LITTLEH/1e9/YR*(1.-.75*YP)
+
 #******************************************************************************
 #Simulation functions
 #******************************************************************************
@@ -275,6 +286,8 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
         if zval>=kwargs['ZMIN'] and zval<=kwargs['ZMAX']:
             dq=dq+ndot_uv(zval,E_low=13.6,E_high=4.*13.6,**kwargs)/NH0*dt
             dq_He=dq_He+ndot_uv(zval,E_low=13.6*4.,E_high=np.inf,**kwargs)/NHE0
+        if zval>=kwargs['ZMIN_STARS'] and zval<=kwargs['ZMAX']:
+            dq=dq+ndot_uv_stars(zval,**kwargs)/NH0*dt
         dtau=DH*1e3*KPC*1e2*NH0_CM*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
         (qvals[tnum-1]*(1.+chi)+qvals_He[tnum-1]*chi)*dz
         tau_vals[tnum]=tau_vals[tnum-1]+dtau
