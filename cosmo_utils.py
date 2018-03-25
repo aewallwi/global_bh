@@ -101,10 +101,10 @@ def stellar_spectrum(E_uv_in,**kwargs):
         stellar_data=np.loadtxt(DIRNAME+'/stellar_spectra.dat')
         SPLINE_DICT[('stellar_spectrum','II')]=\
         np.vstack([stellar_data[:,0],
-        stellar_data[:,1]*POP_II_ION,stellar_data[:,2]]).T
+        stellar_data[:,1],stellar_data[:,2]]).T
         SPLINE_DICT[('stellar_spectrum','III')]=\
         np.vstack([stellar_data[:,0],
-        stellar_data[:,3]*POP_III_ION,stellar_data[:,4]]).T
+        stellar_data[:,3],stellar_data[:,4]]).T
     #Figure out the order of the transition.
     nval=np.floor(1./np.sqrt(1.-E_uv*.75)).astype(int)
     #print nval

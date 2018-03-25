@@ -48,21 +48,119 @@ def rho_stellar(z,mode='derivative',**kwargs):
         *rho_stellar(z,mode='integral',**kwargs)
 
 
-def rho_bh(z,mode='both',**kwargs):
+def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',**kwargs):
+    splkey=('rho_bh','rk')+dict2tuple(kwargs)
+    if not SPLINE_DICT.has_key(splkey):
+        print('Growing Black Holes')
+        taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
+        1.1*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
+        taxis_seeds=np.linspace(.8*COSMO.age(kwargs['ZMAX']),
+        1.2*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
+        zaxis=COSMO.age(taxis,inverse=True)
+        zaxis_seeds=COSMO.age(taxis_seeds,inverse=True)
+        #compute density of halos in mass range
+        rho_seeds=np.zeros_like(zaxis)
+        rho_bh=np.zeros_like(zaxis)
+        rho_bh_quiescent=np.zeros_like(zaxis)
+        rho_bh_accreting=np.zeros_like(zaxis)
+        t_seed_max=COSMO.age(kwargs['Z_SEED_MIN'])
+        for tnum in range(len(taxis_seeds)):
+            g=lambda x: massfunc(10.**x,zaxis[tnum])*10.**x
+            if kwargs['MASSLIMUNITS']=='KELVIN':
+                limlow=np.log10(tvir2mvir(kwargs['TMIN_HALO'],
+                zaxis_seeds[tnum]))
+                limhigh=np.log10(tvir2mvir(kwargs['TMAX_HALO'],
+                zaxis_seeds[tnum]))
+            else:
+                limlow=np.log10(kwargs['MMIN_HALO'])
+                limhigh=np.log10(kwargs['MMAX_HALO'])
+            rho_seeds[tnum]=integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
+        seed_spline=interp.UnivariateSpline(taxis_seeds,rho_seeds,ext=2)
+        #define black hole integrand
+        rho_bh_accreting[0]=0.
+        rho_bh[0]=0.
+        fb_factor=np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_GROW'])
+        if not kwargs['FEEDBACK']:
+            def bh_accreting_integrand(t,y):
+                output=y/kwargs['TAU_GROW']
+                if t<=t_seed_max:
+                    output=output+seed_spline.derivative()(t)
+            def bh_quiescent_integrand(t,rho_bh):
+                return 0.
+        else:
+            def bh_accreting_integrand(t,y):
+                t0=t-kwargs['TAU_FEEDBACK']
+                output=0.
+                if t<=t_seed_max:
+                    output=output+seed_spline.derivative()(t)
+                if t0<=t_seed_max:
+                    output=output+y/kwargs['TAU_GROW']
+                    #print 'before=%.2e'%output
+                    if t0>taxis[0]:
+                        output=output-seed_spline.derivative()(t0)*fb_factor
+                #print 'after=%.2e'%output
+                return output
+            def bh_quiescent_integrand(t,y):
+                t0=t-kwargs['TAU_FEEDBACK']
+                if t0>taxis[0] and t0<=t_seed_max:
+                    #print seed_spline.derivative()(t0)*fb_factor
+                    return seed_spline.derivative()(t0)*fb_factor
+                else:
+                    #print('not executing')
+                    return 0.
+
+        dt=taxis[1]-taxis[0]
+        intlist=[bh_accreting_integrand,bh_quiescent_integrand]
+        ylist=[rho_bh_accreting,rho_bh_quiescent]
+        qlist=['rho_bh_accreting','rho_bh_quiescent']
+        t0list=[taxis[0],taxis[0]+kwargs['TAU_FEEDBACK']]
+        SPLINE_DICT[splkey]={}
+        for integrand,y,quantity,tstart in zip(intlist,ylist,qlist,t0list):
+            integrator=integrate.ode(integrand)#.set_integrator('zvode',
+            #method='bdf', with_jacobian=False)
+            integrator.set_initial_value(y[0],tstart)
+            tnum=int((tstart-taxis[0])/dt)+1
+            print tnum
+            while integrator.successful and tnum<len(taxis):
+                integrator.integrate(integrator.t+dt)
+                y[tnum]=integrator.y[0]
+                tnum+=1
+            print tnum
+            SPLINE_DICT[splkey][quantity]=interp.UnivariateSpline(taxis,y,ext=2)
+            #print y
+        SPLINE_DICT[splkey]['rho_bh_seed']\
+        =interp.UnivariateSpline(taxis,rho_seeds,ext=2)
+        SPLINE_DICT[splkey]['rho_bh']\
+        =interp.UnivariateSpline(taxis,
+        SPLINE_DICT[splkey]['rho_bh_accreting'](taxis)
+        +SPLINE_DICT[splkey]['rho_bh_quiescent'](taxis),ext=2)
+    return SPLINE_DICT[splkey][quantity](COSMO.age(z))
+
+
+
+
+
+
+
+
+def rho_bh(z,mode='both',quantity='rho_bh_accreting',derivative=False,**kwargs):
     '''
     density of black holes in msolar h^2/Mpc^3
     at redshift z given model in **kwargs
     '''
     assert mode in ['accretion','seeding','both']
-    splkey=('rho','gridded',mode)+dict2tuple(kwargs)
+    splkey=('rho_bh',mode)+dict2tuple(kwargs)
     if not SPLINE_DICT.has_key(splkey):
+        SPLINE_DICT[splkey]={}
         print('Growing Black Holes')
         taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
         1.1*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
         zaxis=COSMO.age(taxis,inverse=True)
         #compute density of halos in mass range
-        rho_halos=np.zeros_like(zaxis)
+        rho_seeds=np.zeros_like(zaxis)
         rho_bh=np.zeros_like(zaxis)
+        rho_bh_quiescent=np.zeros_like(zaxis)
+        rho_bh_accreting=np.zeros_like(zaxis)
         for tnum in range(len(taxis)):
             g=lambda x: massfunc(10.**x,zaxis[tnum])*10.**x
             if kwargs['MASSLIMUNITS']=='KELVIN':
@@ -73,21 +171,59 @@ def rho_bh(z,mode='both',**kwargs):
             else:
                 limlow=np.log10(kwargs['MMIN_HALO'])
                 limhigh=np.log10(kwargs['MMAX_HALO'])
-            rho_halos[tnum]=integrate.quad(g,limlow,limhigh)[0]
-        rho_bh[0]=kwargs['FS']*rho_halos[0]
+            rho_seeds[tnum]=integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
+        rho_bh[0]=0.
+        rho_bh_accreting[0]=0.
         dt=(taxis[tnum]-taxis[tnum-1])
+        seed_spline=interp.UnivariateSpline(taxis,np.log(rho_seeds),ext=2)
         for tnum in range(1,len(taxis)):
-            rho_bh[tnum]=rho_bh[tnum-1]
+            rho_bh_accreting[tnum]=rho_bh_accreting[tnum-1]
+            rho_bh_quiescent[tnum]=rho_bh_quiescent[tnum-1]
+            d_rho_bh_accreting=0.
             if mode=='seeding' or mode=='both':
-                rho_bh[tnum]=rho_bh[tnum]+kwargs['FS']*(rho_halos[tnum]-rho_halos[tnum-1])
+                d_rho_bh_accreting=d_rho_bh_accreting\
+                +seed_spline.derivative()(taxis[tnum-1])\
+                *np.exp(seed_spline(taxis[tnum-1]))*dt
             if mode=='accretion' or mode=='both':
-                rho_bh[tnum]=rho_bh[tnum]+rho_bh[tnum-1]*dt/kwargs['TAU_GROW']
-        tfunc=interp.interp1d(taxis,rho_bh)
-        zv=np.linspace(zaxis.min(),zaxis.max(),N_INTERP_Z)#[1:-1]
-        rhoz=tfunc(np.hstack([taxis.max(),COSMO.age(zv[1:-1]),taxis.min()]))
-        SPLINE_DICT[splkey]=interp.interp1d(zv,rhoz,fill_value=0.,
-        bounds_error=False)
-    return SPLINE_DICT[splkey](z)
+                d_rho_bh_accreting=d_rho_bh_accreting\
+                +rho_bh_accreting[tnum-1]*dt/kwargs['TAU_GROW']
+            t0=taxis[tnum]-kwargs['TAU_FEEDBACK']
+            if kwargs['FEEDBACK'] and t0>=taxis[0]:
+                #delay of bholes shutting off
+                d_rho_bh_quiescent=np.min([seed_spline.derivative()(t0)\
+                *np.exp(seed_spline(t0))\
+                *np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_GROW']),
+                rho_bh_accreting[tnum-1]/dt])*dt
+            else:
+                d_rho_bh_quiescent=0.
+            d_rho_bh_accreting=d_rho_bh_quiescent+d_rho_bh_accreting
+            rho_bh_accreting[tnum]=rho_bh_accreting[tnum-1]+d_rho_bh_accreting
+            rho_bh_quiescent[tnum]=rho_bh_quiescent[tnum-1]+d_rho_bh_quiescent
+            rho_bh[tnum]=rho_bh_quiescent[tnum]+rho_bh_accreting[tnum]
+
+
+        for rho_vec,label in \
+        zip([rho_bh,rho_bh_accreting,rho_bh_quiescent,rho_seeds],
+        ['rho_bh','rho_bh_accreting','rho_bh_quiescent','rho_seeds']):
+            #tfunc=interp.interp1d(taxis,rho_vec)
+            #zv=np.linspace(zaxis.min(),zaxis.max(),N_INTERP_Z)#[1:-1]
+            #rhoz=tfunc(np.hstack([taxis.max(),COSMO.age(zv[1:-1]),taxis.min()]))
+            if np.any(rho_vec<=0.):
+                if np.any(rho_vec>0.):
+                    rho_vec[rho_vec<=0.]=rho_vec[rho_vec>0.].min()
+                else:
+                    rho_vec[rho_vec<=0.]=1e-99
+            SPLINE_DICT[splkey][label]=interp.UnivariateSpline(taxis,
+            np.log(rho_vec),ext=2)
+    if not derivative:
+        return np.exp(SPLINE_DICT[splkey][quantity](COSMO.age(z)))
+        #return np.exp(SPLINE_DICT[splkey][quantity](COSMO.age(z)))
+    else:
+        return SPLINE_DICT[splkey][quantity].derivative()(COSMO.age(z))\
+        *np.exp(SPLINE_DICT[splkey][quantity](COSMO.age(z)))
+        #return np.exp(SPLINE_DICT[splkey][quantity](COSMO.age(z)))\
+        #*SPLINE_DICT[splkey][quantity].derivative()(COSMO.age(z))
+
 
 
 
@@ -102,7 +238,7 @@ def emissivity_radio(z,freq,**kwargs):
     '''
     if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN']:
         return 1.0e22*(kwargs['FR']/250.)*(kwargs['FX']/2e-2)**0.86\
-        *(rho_bh(z,**kwargs)/1e4)*(freq/1.4e9)**(-kwargs['ALPHA_R'])\
+        *(rho_bh_runge_kutta(z,**kwargs)/1e4)*(freq/1.4e9)**(-kwargs['ALPHA_R'])\
         *((2.4**(1.-kwargs['ALPHA_X'])-0.1**(1.-kwargs['ALPHA_X']))/\
         (10.**(1.-kwargs['ALPHA_X']-2.**(1.-kwargs['ALPHA_X']))))
     else:
@@ -119,7 +255,7 @@ def emissivity_xrays(z,E_x,obscured=True,**kwargs):
     '''
     if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN']:
         output=2.322e48*(kwargs['FX']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
-        *(rho_bh(z,**kwargs)/1e4)*(1.-kwargs['ALPHA_X'])\
+        *(rho_bh_runge_kutta(z,**kwargs)/1e4)*(1.-kwargs['ALPHA_X'])\
         /(10.**(1.-kwargs['ALPHA_X'])-2.**(1.-kwargs['ALPHA_X']))\
         *np.exp(-E_x/300.)#include 300 keV exponential cutoff typical of AGN
         if obscured:
@@ -158,7 +294,8 @@ def emissivity_lyalpha_stars(z,E_uv,mode='number',**kwargs):
     '''
     output=rho_stellar(z,mode='derivative',**kwargs)\
     *kwargs['F_STAR']*COSMO.Ob(0.)/COSMO.Om(0.)*MSOL/MP\
-    *(1.-.75*YP)*stellar_spectrum(E_uv,**kwargs)/YR/1e9#convert from per Gyr to
+    *(1.-.75*YP)*stellar_spectrum(E_uv,**kwargs)/YR/1e9\
+    *kwargs['N_ION_STARS']#convert from per Gyr to
     #pwer second
     if mode=='energy':
         output=output*E_uv
@@ -249,8 +386,11 @@ def ndot_uv_stars(z,**kwargs):
         z, redshift
         kwargs, model parameters
     '''
-    return kwargs['ZETA_ION']*rho_stellar(z,mode='derivative',**kwargs)\
+    return kwargs['N_ION_STARS']*kwargs['F_STAR']*kwargs['F_ESC_STARS']\
+    *rho_stellar(z,mode='derivative',**kwargs)\
     *MSOL/MP/LITTLEH/1e9/YR*(1.-.75*YP)
+    #return kwargs['ZETA_ION']*rho_stellar(z,mode='derivative',**kwargs)\
+    #*MSOL/MP/LITTLEH/1e9/YR*(1.-.75*YP)
 
 #******************************************************************************
 #Simulation functions
