@@ -85,6 +85,7 @@ def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',**kwargs):
                 output=y/kwargs['TAU_GROW']
                 if t<=t_seed_max:
                     output=output+seed_spline.derivative()(t)
+                return output
             def bh_quiescent_integrand(t,rho_bh):
                 return 0.
         else:
