@@ -438,7 +438,7 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
 
 
 
-def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
+def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
 ,**kwargs):
     '''
     Compute the kinetic temperature and electron fraction in the neutral IGM
@@ -447,12 +447,12 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
         zlow, minimum redshift to evolve calculation to
         zhigh, maximum redshift to evolve calculation to
         ntimes, number of redshift steps
-        T4, temperature of HII regions
+        T4_HII, temperature of HII regions
         kwargs, dictionary of model parameters.
     '''
     #begin by calculating HII history
     print('Computing Ionization History')
-    taxis,zaxis,q_ion,_=q_ionize(zlow,zhigh,ntimes,T4,**kwargs)
+    taxis,zaxis,q_ion,_=q_ionize(zlow,zhigh,ntimes,T4_HII,**kwargs)
     aaxis=1./(1.+zaxis)
     xray_axis=np.logspace(-1,3,N_INTERP_X)
     radio_axis=np.logspace(6,12,N_INTERP_X)#radio frequencies
@@ -575,7 +575,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4=1.,verbose=False,diagnostic=False
             Tks[tnum],Talphas[tnum],TCMB0/aaxis[tnum]+Trads[tnum])#include
             # CMB coupling to radio background
             #ts[tnum]=Tks[tnum]
-            print('z=%.2f,Tk=%.2f,xe=%.2e,QHII=%.2f'%(zaxis[tnum],Tks[tnum],
+            if verbose print('z=%.2f,Tk=%.2f,xe=%.2e,QHII=%.2f'%(zaxis[tnum],Tks[tnum],
             xes[tnum],q_ion[tnum]))
     for tnum in range(ntimes):
         tb[tnum]=27.*(1.-xes[tnum])*np.max([(1.-q_ion[tnum]),0.])\
