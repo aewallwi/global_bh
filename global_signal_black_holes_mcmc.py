@@ -5,19 +5,11 @@ mpirun -np 2 python global_signal_black_holes_mcmc.py -i <config_file>
 '''
 import numpy,scipy.signal
 import scipy.interpolate as interp
-import yaml, emcee, argparse
+import yaml, emcee, argparse, yaml
 from settings import F21
 import global_signal_black_holes as GSBH
 
-def run_mcmc(**kwargs):
-    '''
-    '''
-    return
-def read_config_file(file_name):
-    '''
-    read yaml-config file and return dictionary of variables for running MCMC
-    '''
-    return
+
 
 def var_resid(resid_array,window_length=20):
     '''
@@ -93,72 +85,92 @@ def lnprob(params,x,y,yerr,param_template,param_list,param_priors):
     return lp+lnlike(params,x,y,yerr,param_template,param_list)
 
 
+class Sampler():
+    '''
+    Class for running MCMC and storing output.
+    '''
+    def __init__(self,config_file):
+        '''
+        Initialize the sampler.
+        Args:
+            config_file, string with name of the config file.
+        '''
+        with open(config_file, 'r') as ymlfile:
+            self.config= yaml.load(ymlfile)
+        ymlfile.close()
+        #read in measurement file
+        #Assume first column is frequency, second column is measured brightness temp
+        #and third column is the residual from fitting an empirical model
+        #(see Bowman 2018)
+        self.freqs,self.tb_meas,self.dtb=np.loadtxt(self.config['DATAFILE'])
+        self.var_tb=var_resid(self.dtb)#Calculate std of residuals
+        #read list of parameters to vary from config file, and set all other parameters
+        #to default starting values
+        self.params_all=self.config['PARAMS']
+        self.params_vary=self.config['PARAMS2VARY']
+        self.params_vary_priors=self.config['PRIORS']
+
+    def sample(self):
+        '''
+        Run the MCMC. 
+        '''
+        ndim,nwalkers=len(self.params_vary),self.config['NWALKERS']
+
+        #perturb initial conditions
+        #draw from prior to seed walkers.
+        p0=np.zeros((nwalkers,len(self.params_vary))
+        for pnum,pname in enumerate(self.params_vary):
+            if sefl.params_vary_priors[pname]['TYPE']=='UNIFORM':
+                p0[:,pnum]=np.random.rand(nwalkers)\
+                *(self.params_vary_priors[pname]['MAX']-params_vary_priors[pname]['MIN'])\
+                +self.params_vary_priors[pname]['MIN']
+            elif self.params_vary_priors[pname]['TYPE']=='GAUSSIAN':
+                p0[:,pnum]=np.random.randn(nwalkers)*sefl.params_vary_priors[pname]['STD']\
+                +self.params_vary_priors[pname]['MEAN']
+            elif self.params_vary_priors[pname]['TYPE']=='LOGNORMAL':
+                p0[:,pnum]=np.random.lognormal(mean=self.params_vary_priors[pname]['MEAN'],
+                sigma=self.params_vary_priors[pname]['STD'],size=nwalkers)
+            else:
+                p0[:,pnum]=(np.randn(nwalkers)*self.params_vary_priors['DEFAULT_STD']\
+                +1.)*params_all[pname]#if prior not listed, start walkers randomly
+                #distributed.
+        args=(self.freqs,self.tb_meas,self.var_tb,
+        self.params_all,self.params_vary,self.params_vary_priors)
+        if self.params_all['MPI']:
+            pool=MPIPool()
+            if not pool.is_master():
+                pool.wait()
+                sys.exit(0)
+            self.sampler=emcee.EnsembleSampler(nwalkers,ndim,lnprob,
+            args=args,pool=pool)
+            sampler.run_mcmc(p0,self.config['NSTEPS'])
+            np.savez(self.config['OUTPUT_NAME'],chain=sampler.chain)
+            pool.close()
+        else:
+            self.sampler=emcess.EnsembleSampler(nwalkers,ndim,lnprob,
+            args=args,threads=self.config['THREADS'])
+            sampler.run_mcmc(p0,self.config['NSTEPS'])
+            np.savez(self.config['OUTPUT_NAME'],chain=sampler.chain)
 
 
-desc=('MCMC driver for global-signal black-holes model.\n'
-      'To run: mpirun -np <num_processes>'
-      'python global_signal_black_holes_mcmc.py -c <config_file>')
-parser=argparse.ArgumentParser(description=desc)
-parser.add_argument('-c','--config',
-help='configuration file')
-parser.add_argument('-v','--verbose',
-help='print more output',action='store_true')
-parser.add_argument('-a','--analytic',
-help='test mode for fitting simple analytic test model'),
-action='store_true')
-#parser.add_argument('-p','--progress',
-#help='show progress bar',action='store_true')
-parser.parse_args()
-simulation_params=read_config_file(parser.config_file)
-#read in measurement file
-#Assume first column is frequency, second column is measured brightness temp
-#and third column is the residual from fitting an empirical model
-#(see Bowman 2018)
-freqs,tb_meas,dtb=np.loadtxt(simulation_params['DATAFILE'])
-var_tb=var_resid(dtb)#Calculate std of residuals
-#read list of parameters to vary from config file, and set all other parameters
-#to default starting values
-params_all=simulation_params['PARAMS']
-params_vary=simulation_params['PARAMS2VARY']
-params_vary_priors=simulation_params['PRIORS']
+'''
+Allow execution as a script.
+'''
+if __name__ == "main":
 
-
-ndim,nwalkers=len(params_vary),simulation_params['NWALKERS']
-
-#perturb initial conditions
-#draw from prior to seed walkers.
-p0=np.zeros((nwalkers,len(params_vary))
-for pnum,pname in enumerate(params_vary):
-    if params_vary_priors[pname]['TYPE']=='UNIFORM':
-        p0[:,pnum]=np.random.rand(nwalkers)\
-        *(params_vary_priors[pname]['MAX']-params_vary_priors[pname]['MIN'])\
-        +params_vary_priors[pname]['MIN']
-    elif params_vary_priors[pname]['TYPE']=='GAUSSIAN':
-        p0[:,pnum]=np.random.randn(nwalkers)*params_vary_priors[pname]['STD']\
-        +params_vary_priors[pname]['MEAN']
-    elif params_vary_priors[pname]['TYPE']=='LOGNORMAL':
-        p0[:,pnum]=np.random.lognormal(mean=params_vary_priors[pname]['MEAN'],
-        sigma=params_vary_priors[pname]['STD'],size=nwalkers)
-    else:
-        p0[:,pnum]=(np.randn(nwalkers)*params_vary_priors['DEFAULT_STD']\
-        +1.)*params_all[pname]#if prior not listed, start walkers randomly
-        #distributed.
-
-
-
-if params_all['MPI']:
-    pool=MPIPool()
-    if not pool.is_master():
-        pool.wait()
-        sys.exit(0)
-    sampler=emcee.EnsembleSampler(nwalkers,ndim,lnprob,args=(freqs,tb_meas,
-    var_tb,params_all,params_vary,params_vary_priors),pool=pool)
-    sampler.run_mcmc(p0,simulation_params['NSTEPS'])
-    np.savez(simulation_params['OUTPUT_NAME'],chain=sampler.chain)
-    pool.close()
-else:
-    sampler=emcess.EnsembleSampler(nwalkers,ndim,lnprob,args=(freqs,tb_meas,
-    var_tb,params_all,params_vary,params_vary_priors),
-    threads=simulation_params['THREADS'])
-    sampler.run_mcmc(p0,simulation_params['NSTEPS'])
-    np.savez(simulation_params['OUTPUT_NAME'],chain=sampler.chain)
+    desc=('MCMC driver for global-signal black-holes model.\n'
+          'To run: mpirun -np <num_processes>'
+          'python global_signal_black_holes_mcmc.py -c <config_file>')
+    parser=argparse.ArgumentParser(description=desc)
+    parser.add_argument('-c','--config',
+    help='configuration file')
+    parser.add_argument('-v','--verbose',
+    help='print more output',action='store_true')
+    parser.add_argument('-a','--analytic',
+    help='test mode for fitting simple analytic test model'),
+    action='store_true')
+    #parser.add_argument('-p','--progress',
+    #help='show progress bar',action='store_true')
+    parser.parse_args()
+    my_sampler=Sampler(parser.config_file)
+    my_sampler.sample()
