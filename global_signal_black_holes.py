@@ -357,7 +357,7 @@ def delta_Tb_analytic(freq,**kwargs):
     *np.log(-1./kwargs['TAU']*\
     np.log((1.+np.exp(-kwargs['TAU']))/2.))
     return -kwargs['A']*((1-np.exp(-kwargs['TAU']*np.exp(B)))\
-    /(1.-np.exp(-kwargs['TAU']))
+    /(1.-np.exp(-kwargs['TAU'])))
 
 def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
 ,**kwargs):
@@ -496,8 +496,8 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
             Tks[tnum],Talphas[tnum],TCMB0/aaxis[tnum]+Trads[tnum])#include
             # CMB coupling to radio background
             #ts[tnum]=Tks[tnum]
-            if verbose print('z=%.2f,Tk=%.2f,xe=%.2e,QHII=%.2f'%(zaxis[tnum],Tks[tnum],
-            xes[tnum],q_ion[tnum]))
+            if verbose: print('z=%.2f,Tk=%.2f,xe=%.2e,QHII=%.2f'%(zaxis[tnum],
+            Tks[tnum],xes[tnum],q_ion[tnum]))
     for tnum in range(ntimes):
         tb[tnum]=27.*(1.-xes[tnum])*np.max([(1.-q_ion[tnum]),0.])\
         *(1.-(TCMB0/aaxis[tnum]+Trads[tnum])/Tspins[tnum])\

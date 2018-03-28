@@ -3,11 +3,13 @@ MCMC driver for global-signal black-holes model.
 To run:
 mpirun -np 2 python global_signal_black_holes_mcmc.py -i <config_file>
 '''
-import numpy,scipy.signal
+import scipy.signal as signal
 import scipy.interpolate as interp
+import numpy as np
 import yaml, emcee, argparse, yaml
 from settings import F21
 import global_signal_black_holes as GSBH
+import copy
 
 
 
@@ -25,7 +27,7 @@ def var_resid(resid_array,window_length=20):
     window=np.zeros_like(resid_array)
     nd=len(resid_array)
     window[nd/2-window_length/2:nd/2+window_length/2]=1./window_length
-    return signal.fft_convolve(window,
+    return signal.fftconvolve(window,
     np.abs(resid_array-np.mean(resid_array))**2.,mode='same')
 
 def lnlike(params,x,y,yvar,param_template,param_list,analytic):
@@ -43,12 +45,12 @@ def lnlike(params,x,y,yvar,param_template,param_list,analytic):
     #run heating
     if not analytic:
         signal_model=GSBH.delta_Tb(param_instance['ZLOW'],param_instance['ZHIGH'],
-        param_instance['NTIMES_TB'],param_instance['T4_HII'],verbose=parser.verbose,
+        param_instance['NTIMES_TB'],param_instance['T4_HII'],verbose=False,
         diagnostic=True,**param_instance)
         x_model=F21/(signal_model['Z']+1.)/1e6
         y_model=interp.interp1d(x_model,signal_model['Tb'])(x)
     else:
-        y_model=GSBH.analytic_Tb(x,**param_instance)
+        y_model=GSBH.delta_Tb_analytic(x,**param_instance)
         #interpolate model to measured frequencies
     return -np.sum(0.5*(y_model-y)**2./yvar)
 
@@ -78,23 +80,25 @@ def lnprior(params,param_list,param_priors):
             -np.log(param)
     return output
 
-def lnprob(params,x,y,yerr,param_template,param_list,param_priors):
+def lnprob(params,x,y,yerr,param_template,param_list,param_priors,analytic):
     lp=lnprior(params,param_list,param_priors)
     if not np.isfinite(lp):
         return -np.inf
-    return lp+lnlike(params,x,y,yerr,param_template,param_list)
+    return lp+lnlike(params,x,y,yerr,param_template,param_list,analytic)
 
 
 class Sampler():
     '''
     Class for running MCMC and storing output.
     '''
-    def __init__(self,config_file):
+    def __init__(self,config_file,verbose=False,analytic=True):
         '''
         Initialize the sampler.
         Args:
             config_file, string with name of the config file.
         '''
+        self.verbose=verbose
+        self.analytic=analytic
         with open(config_file, 'r') as ymlfile:
             self.config= yaml.load(ymlfile)
         ymlfile.close()
@@ -102,27 +106,31 @@ class Sampler():
         #Assume first column is frequency, second column is measured brightness temp
         #and third column is the residual from fitting an empirical model
         #(see Bowman 2018)
-        self.freqs,self.tb_meas,self.dtb=np.loadtxt(self.config['DATAFILE'])
-        self.var_tb=var_resid(self.dtb)#Calculate std of residuals
-        #read list of parameters to vary from config file, and set all other parameters
-        #to default starting values
+        self.data=np.loadtxt(self.config['DATAFILE'],skiprows=1,delimiter=',')
+        self.freqs,self.tb_meas,self.dtb\
+        =self.data[:,0],self.data[:,1],self.data[:,2]
+        self.var_tb=var_resid(self.dtb,
+        window_length=self.config['NPTS_NOISE_EST'])#Calculate std of residuals
+        #read list of parameters to vary from config file,
+        #and set all other parameters to default starting values
         self.params_all=self.config['PARAMS']
         self.params_vary=self.config['PARAMS2VARY']
         self.params_vary_priors=self.config['PRIORS']
 
     def sample(self):
         '''
-        Run the MCMC. 
+        Run the MCMC.
         '''
         ndim,nwalkers=len(self.params_vary),self.config['NWALKERS']
 
         #perturb initial conditions
         #draw from prior to seed walkers.
-        p0=np.zeros((nwalkers,len(self.params_vary))
+        p0=np.zeros((nwalkers,len(self.params_vary)))
         for pnum,pname in enumerate(self.params_vary):
-            if sefl.params_vary_priors[pname]['TYPE']=='UNIFORM':
+            if self.params_vary_priors[pname]['TYPE']=='UNIFORM':
                 p0[:,pnum]=np.random.rand(nwalkers)\
-                *(self.params_vary_priors[pname]['MAX']-params_vary_priors[pname]['MIN'])\
+                *(self.params_vary_priors[pname]['MAX']\
+                -self.params_vary_priors[pname]['MIN'])\
                 +self.params_vary_priors[pname]['MIN']
             elif self.params_vary_priors[pname]['TYPE']=='GAUSSIAN':
                 p0[:,pnum]=np.random.randn(nwalkers)*sefl.params_vary_priors[pname]['STD']\
@@ -135,21 +143,22 @@ class Sampler():
                 +1.)*params_all[pname]#if prior not listed, start walkers randomly
                 #distributed.
         args=(self.freqs,self.tb_meas,self.var_tb,
-        self.params_all,self.params_vary,self.params_vary_priors)
-        if self.params_all['MPI']:
+        self.params_all,self.params_vary,
+        self.params_vary_priors,self.analytic)
+        if self.config['MPI']:
             pool=MPIPool()
             if not pool.is_master():
                 pool.wait()
                 sys.exit(0)
             self.sampler=emcee.EnsembleSampler(nwalkers,ndim,lnprob,
             args=args,pool=pool)
-            sampler.run_mcmc(p0,self.config['NSTEPS'])
+            self.sampler.run_mcmc(p0,self.config['NSTEPS'])
             np.savez(self.config['OUTPUT_NAME'],chain=sampler.chain)
             pool.close()
         else:
-            self.sampler=emcess.EnsembleSampler(nwalkers,ndim,lnprob,
+            self.sampler=emcee.EnsembleSampler(nwalkers,ndim,lnprob,
             args=args,threads=self.config['THREADS'])
-            sampler.run_mcmc(p0,self.config['NSTEPS'])
+            self.sampler.run_mcmc(p0,self.config['NSTEPS'])
             np.savez(self.config['OUTPUT_NAME'],chain=sampler.chain)
 
 
@@ -167,10 +176,11 @@ if __name__ == "main":
     parser.add_argument('-v','--verbose',
     help='print more output',action='store_true')
     parser.add_argument('-a','--analytic',
-    help='test mode for fitting simple analytic test model'),
+    help='test mode for fitting simple analytic test model',
     action='store_true')
     #parser.add_argument('-p','--progress',
     #help='show progress bar',action='store_true')
     parser.parse_args()
-    my_sampler=Sampler(parser.config_file)
+    my_sampler=Sampler(parser.config_file,
+    verbose=parser.verbose,analytic=parser.analytic)
     my_sampler.sample()
