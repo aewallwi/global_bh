@@ -11,6 +11,16 @@ from settings import F21
 import global_signal_black_holes as GSBH
 import copy
 
+def delta_Tb_analytic(freq,**kwargs):
+    '''
+    Analytic function describing delta T_b
+    '''
+
+    B=4.*((freq-kwargs['NU0'])/kwargs['W'])**2.\
+    *np.log(-1./kwargs['TAU']*\
+    np.log((1.+np.exp(-kwargs['TAU']))/2.))
+    return -kwargs['A']*(1-np.exp(-kwargs['TAU']*np.exp(B)))\
+    /(1.-np.exp(-kwargs['TAU']))
 
 
 def var_resid(resid_array,window_length=20):
@@ -26,7 +36,11 @@ def var_resid(resid_array,window_length=20):
     '''
     window=np.zeros_like(resid_array)
     nd=len(resid_array)
-    window[nd/2-window_length/2:nd/2+window_length/2]=1./window_length
+    if np.mod(nd,2)==1:
+        nd=nd-1
+    iupper=int(nd/2+window_length/2)
+    ilower=int(nd/2-window_length/2)
+    window[ilower:iupper]=1./window_length
     return signal.fftconvolve(window,
     np.abs(resid_array-np.mean(resid_array))**2.,mode='same')
 
@@ -50,7 +64,7 @@ def lnlike(params,x,y,yvar,param_template,param_list,analytic):
         x_model=F21/(signal_model['Z']+1.)/1e6
         y_model=interp.interp1d(x_model,signal_model['Tb'])(x)
     else:
-        y_model=GSBH.delta_Tb_analytic(x,**param_instance)
+        y_model=delta_Tb_analytic(x,**param_instance)
         #interpolate model to measured frequencies
     return -np.sum(0.5*(y_model-y)**2./yvar)
 
@@ -72,19 +86,19 @@ def lnprior(params,param_list,param_priors):
         elif param_priors[param_key]['TYPE']=='GAUSSIAN':
             var=param_priors[param_key]['VAR']
             mu=param_priors[param_key]['MEAN']
-            output+=.5*((param-mu)**2./var-np.log(2.*PI*var))
+            output+=-.5*((param-mu)**2./var-np.log(2.*PI*var))
         elif param_priors[param_key]['TYPE']=='LOGNORMAL':
             var=param_priors[param_key]['VAR']
             mu=param_priors[param_key]['MEAN']
-            output+=.5*((np.log(param)-mu)**2./var-np.log(2.*PI*var))\
+            output+=-.5*((np.log(param)-mu)**2./var-np.log(2.*PI*var))\
             -np.log(param)
     return output
 
-def lnprob(params,x,y,yerr,param_template,param_list,param_priors,analytic):
+def lnprob(params,x,y,yvar,param_template,param_list,param_priors,analytic):
     lp=lnprior(params,param_list,param_priors)
     if not np.isfinite(lp):
         return -np.inf
-    return lp+lnlike(params,x,y,yerr,param_template,param_list,analytic)
+    return lp+lnlike(params,x,y,yvar,param_template,param_list,analytic)
 
 
 class Sampler():
@@ -153,13 +167,13 @@ class Sampler():
             self.sampler=emcee.EnsembleSampler(nwalkers,ndim,lnprob,
             args=args,pool=pool)
             self.sampler.run_mcmc(p0,self.config['NSTEPS'])
-            np.savez(self.config['OUTPUT_NAME'],chain=sampler.chain)
+            np.savez(self.config['OUTPUT_NAME'],chain=self.sampler.chain)
             pool.close()
         else:
             self.sampler=emcee.EnsembleSampler(nwalkers,ndim,lnprob,
             args=args,threads=self.config['THREADS'])
             self.sampler.run_mcmc(p0,self.config['NSTEPS'])
-            np.savez(self.config['OUTPUT_NAME'],chain=sampler.chain)
+            np.savez(self.config['OUTPUT_NAME'],chain=self.sampler.chain)
 
 
 '''

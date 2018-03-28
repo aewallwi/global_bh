@@ -13,7 +13,7 @@ import scipy.interpolate as interp
 import copy
 import matplotlib.pyplot as plt
 import radio_background as RB
-import camb
+#mport camb
 import os
 from settings import DEBUG
 
@@ -121,12 +121,12 @@ def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',**kwargs):
             #method='bdf', with_jacobian=False)
             integrator.set_initial_value(y[0],tstart)
             tnum=int((tstart-taxis[0])/dt)+1
-            print tnum
+            #print tnum
             while integrator.successful and tnum<len(taxis):
                 integrator.integrate(integrator.t+dt)
                 y[tnum]=integrator.y[0]
                 tnum+=1
-            print tnum
+            #print tnum
             SPLINE_DICT[splkey][quantity]=interp.UnivariateSpline(taxis,y,ext=2)
             #print y
         SPLINE_DICT[splkey]['rho_bh_seed']\
@@ -348,16 +348,6 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
     return taxis,zaxis,qvals,tau_vals
 
 
-def delta_Tb_analytic(freq,**kwargs):
-    '''
-    Analytic function describing delta T_b
-    '''
-
-    B=4.*(freq-kwargs['NU0'])/kwargs['W']**2.\
-    *np.log(-1./kwargs['TAU']*\
-    np.log((1.+np.exp(-kwargs['TAU']))/2.))
-    return -kwargs['A']*((1-np.exp(-kwargs['TAU']*np.exp(B)))\
-    /(1.-np.exp(-kwargs['TAU'])))
 
 def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
 ,**kwargs):
