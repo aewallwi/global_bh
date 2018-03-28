@@ -36,8 +36,7 @@ def var_resid(resid_array,window_length=20):
     return signal.fft_convolve(window,
     np.abs(resid_array-np.mean(resid_array))**2.,mode='same')
 
-
-def lnlike(params,x,y,yvar,param_template,param_list):
+def lnlike(params,x,y,yvar,param_template,param_list,analytic):
     '''
     log-likelihood of parameters
     Args:
@@ -50,12 +49,15 @@ def lnlike(params,x,y,yvar,param_template,param_list):
     for param,param_key in zip(params,param_list):
         param_instance[param_key]=param
     #run heating
-    signal_model=GSBH.delta_Tb(param_instance['ZLOW'],param_instance['ZHIGH'],
-    param_instance['NTIMES_TB'],param_instance['T4_HII'],verbose=parser.verbose,
-    diagnostic=True)
-    #interpolate model to measured frequencies
-    x_model=F21/(signal_model['Z']+1.)/1e6
-    y_model=interp.interp1d(x_model,signal_model['Tb'])(x)
+    if not analytic:
+        signal_model=GSBH.delta_Tb(param_instance['ZLOW'],param_instance['ZHIGH'],
+        param_instance['NTIMES_TB'],param_instance['T4_HII'],verbose=parser.verbose,
+        diagnostic=True,**param_instance)
+        x_model=F21/(signal_model['Z']+1.)/1e6
+        y_model=interp.interp1d(x_model,signal_model['Tb'])(x)
+    else:
+        y_model=GSBH.analytic_Tb(x,**param_instance)
+        #interpolate model to measured frequencies
     return -np.sum(0.5*(y_model-y)**2./yvar)
 
 #Construct a prior for each parameter.
@@ -101,6 +103,9 @@ parser.add_argument('-c','--config',
 help='configuration file')
 parser.add_argument('-v','--verbose',
 help='print more output',action='store_true')
+parser.add_argument('-a','--analytic',
+help='test mode for fitting simple analytic test model'),
+action='store_true')
 #parser.add_argument('-p','--progress',
 #help='show progress bar',action='store_true')
 parser.parse_args()
@@ -109,7 +114,7 @@ simulation_params=read_config_file(parser.config_file)
 #Assume first column is frequency, second column is measured brightness temp
 #and third column is the residual from fitting an empirical model
 #(see Bowman 2018)
-freqs,tb_meas,dtb=np.loadtxt(simulation_params['DATA_FILE'])
+freqs,tb_meas,dtb=np.loadtxt(simulation_params['DATAFILE'])
 var_tb=var_resid(dtb)#Calculate std of residuals
 #read list of parameters to vary from config file, and set all other parameters
 #to default starting values

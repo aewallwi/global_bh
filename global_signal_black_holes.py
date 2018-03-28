@@ -139,95 +139,6 @@ def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',**kwargs):
 
 
 
-
-
-
-
-
-def rho_bh(z,mode='both',quantity='rho_bh_accreting',derivative=False,**kwargs):
-    '''
-    density of black holes in msolar h^2/Mpc^3
-    at redshift z given model in **kwargs
-    '''
-    assert mode in ['accretion','seeding','both']
-    splkey=('rho_bh',mode)+dict2tuple(kwargs)
-    if not SPLINE_DICT.has_key(splkey):
-        SPLINE_DICT[splkey]={}
-        print('Growing Black Holes')
-        taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
-        1.1*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
-        zaxis=COSMO.age(taxis,inverse=True)
-        #compute density of halos in mass range
-        rho_seeds=np.zeros_like(zaxis)
-        rho_bh=np.zeros_like(zaxis)
-        rho_bh_quiescent=np.zeros_like(zaxis)
-        rho_bh_accreting=np.zeros_like(zaxis)
-        for tnum in range(len(taxis)):
-            g=lambda x: massfunc(10.**x,zaxis[tnum])*10.**x
-            if kwargs['MASSLIMUNITS']=='KELVIN':
-                limlow=np.log10(tvir2mvir(kwargs['TMIN_HALO'],
-                zaxis[tnum]))
-                limhigh=np.log10(tvir2mvir(kwargs['TMAX_HALO'],
-                zaxis[tnum]))
-            else:
-                limlow=np.log10(kwargs['MMIN_HALO'])
-                limhigh=np.log10(kwargs['MMAX_HALO'])
-            rho_seeds[tnum]=integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
-        rho_bh[0]=0.
-        rho_bh_accreting[0]=0.
-        dt=(taxis[tnum]-taxis[tnum-1])
-        seed_spline=interp.UnivariateSpline(taxis,np.log(rho_seeds),ext=2)
-        for tnum in range(1,len(taxis)):
-            rho_bh_accreting[tnum]=rho_bh_accreting[tnum-1]
-            rho_bh_quiescent[tnum]=rho_bh_quiescent[tnum-1]
-            d_rho_bh_accreting=0.
-            if mode=='seeding' or mode=='both':
-                d_rho_bh_accreting=d_rho_bh_accreting\
-                +seed_spline.derivative()(taxis[tnum-1])\
-                *np.exp(seed_spline(taxis[tnum-1]))*dt
-            if mode=='accretion' or mode=='both':
-                d_rho_bh_accreting=d_rho_bh_accreting\
-                +rho_bh_accreting[tnum-1]*dt/kwargs['TAU_GROW']
-            t0=taxis[tnum]-kwargs['TAU_FEEDBACK']
-            if kwargs['FEEDBACK'] and t0>=taxis[0]:
-                #delay of bholes shutting off
-                d_rho_bh_quiescent=np.min([seed_spline.derivative()(t0)\
-                *np.exp(seed_spline(t0))\
-                *np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_GROW']),
-                rho_bh_accreting[tnum-1]/dt])*dt
-            else:
-                d_rho_bh_quiescent=0.
-            d_rho_bh_accreting=d_rho_bh_quiescent+d_rho_bh_accreting
-            rho_bh_accreting[tnum]=rho_bh_accreting[tnum-1]+d_rho_bh_accreting
-            rho_bh_quiescent[tnum]=rho_bh_quiescent[tnum-1]+d_rho_bh_quiescent
-            rho_bh[tnum]=rho_bh_quiescent[tnum]+rho_bh_accreting[tnum]
-
-
-        for rho_vec,label in \
-        zip([rho_bh,rho_bh_accreting,rho_bh_quiescent,rho_seeds],
-        ['rho_bh','rho_bh_accreting','rho_bh_quiescent','rho_seeds']):
-            #tfunc=interp.interp1d(taxis,rho_vec)
-            #zv=np.linspace(zaxis.min(),zaxis.max(),N_INTERP_Z)#[1:-1]
-            #rhoz=tfunc(np.hstack([taxis.max(),COSMO.age(zv[1:-1]),taxis.min()]))
-            if np.any(rho_vec<=0.):
-                if np.any(rho_vec>0.):
-                    rho_vec[rho_vec<=0.]=rho_vec[rho_vec>0.].min()
-                else:
-                    rho_vec[rho_vec<=0.]=1e-99
-            SPLINE_DICT[splkey][label]=interp.UnivariateSpline(taxis,
-            np.log(rho_vec),ext=2)
-    if not derivative:
-        return np.exp(SPLINE_DICT[splkey][quantity](COSMO.age(z)))
-        #return np.exp(SPLINE_DICT[splkey][quantity](COSMO.age(z)))
-    else:
-        return SPLINE_DICT[splkey][quantity].derivative()(COSMO.age(z))\
-        *np.exp(SPLINE_DICT[splkey][quantity](COSMO.age(z)))
-        #return np.exp(SPLINE_DICT[splkey][quantity](COSMO.age(z)))\
-        #*SPLINE_DICT[splkey][quantity].derivative()(COSMO.age(z))
-
-
-
-
 def emissivity_radio(z,freq,**kwargs):
     '''
     emissivity of radio emission from accreting black holes at redshift z
@@ -437,6 +348,16 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
     return taxis,zaxis,qvals,tau_vals
 
 
+def delta_Tb_analytic(freq,**kwargs):
+    '''
+    Analytic function describing delta T_b
+    '''
+
+    B=4.*(freq-kwargs['NU0'])/kwargs['W']**2.\
+    *np.log(-1./kwargs['TAU']*\
+    np.log((1.+np.exp(-kwargs['TAU']))/2.))
+    return -kwargs['A']*((1-np.exp(-kwargs['TAU']*np.exp(B)))\
+    /(1.-np.exp(-kwargs['TAU']))
 
 def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
 ,**kwargs):
