@@ -98,7 +98,7 @@ def stellar_spectrum(E_uv_in,**kwargs):
     E_uv=E_uv_in/(.75*1e3*E_HI_ION)#Units of ly-alpha energy
     splkey=('stellar_spectrum',kwargs['POP'])
     if not SPLINE_DICT.has_key(splkey):
-        stellar_data=np.loadtxt(DIRNAME+'/stellar_spectra.dat')
+        stellar_data=np.loadtxt(DIRNAME+'../tables/stellar_spectra.dat')
         SPLINE_DICT[('stellar_spectrum','II')]=\
         np.vstack([stellar_data[:,0],
         stellar_data[:,1],stellar_data[:,2]]).T
@@ -259,7 +259,7 @@ def init_interpolation_tables():
     SPLINE_DICT['xis']=np.array([1e-4,2.318e-4,4.677e-4,1.0e-3,2.318e-3,
     4.677e-3,1.0e-2,2.318e-2,4.677e-2,1e-1,.5,.9,.99,.999])
     for tname,xi in zip(table_names,SPLINE_DICT['xis']):
-        itable=np.loadtxt(DIRNAME+'/'+tname,skiprows=3)
+        itable=np.loadtxt(DIRNAME+'../tables/'+tname,skiprows=3)
         SPLINE_DICT[('f_ion',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,1])
         SPLINE_DICT[('f_heat',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,2])
         SPLINE_DICT[('f_exc',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,3])
@@ -486,7 +486,7 @@ def kappa_10_eH(tk):
     '''
     splkey=('kappa_10','eH')
     if not SPLINE_DICT.has_key(splkey):
-        kappa_eH_data=np.loadtxt(DIRNAME+'/kappa_eH_table.dat')
+        kappa_eH_data=np.loadtxt(DIRNAME+'/../tables/kappa_eH_table.dat')
         SPLINE_DICT[splkey]=interp.interp1d(np.log10(kappa_eH_data[:,0]),
         np.log10(kappa_eH_data[:,1]))
     if isinstance(tk,float) or isinstance(tk,np.float64):
@@ -508,7 +508,7 @@ def kappa_10_pH(tk):
     '''
     splkey=('kappa_10','pH')
     if not SPLINE_DICT.has_key(splkey):
-        kappa_pH_data=np.loadtxt(DIRNAME+'/kappa_pH_table.dat')
+        kappa_pH_data=np.loadtxt(DIRNAME+'/../kappa_pH_table.dat')
         SPLINE_DICT[splkey]=interp.interp1d(np.log10(kappa_pH_data[:,0]),
         np.log10(kappa_pH_data[:,1]))
     if isinstance(tk,float) or isinstance(tk,np.float64):

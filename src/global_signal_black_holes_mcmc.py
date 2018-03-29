@@ -9,7 +9,9 @@ import numpy as np
 import yaml, emcee, argparse, yaml
 from settings import F21
 import global_signal_black_holes as GSBH
-import copy
+import copy,sys
+from emcee.utils import MPIPool
+
 
 def delta_Tb_analytic(freq,**kwargs):
     '''
@@ -179,7 +181,7 @@ class Sampler():
 '''
 Allow execution as a script.
 '''
-if __name__ == "main":
+if __name__ == "__main__":
 
     desc=('MCMC driver for global-signal black-holes model.\n'
           'To run: mpirun -np <num_processes>'
@@ -194,7 +196,7 @@ if __name__ == "main":
     action='store_true')
     #parser.add_argument('-p','--progress',
     #help='show progress bar',action='store_true')
-    parser.parse_args()
-    my_sampler=Sampler(parser.config_file,
-    verbose=parser.verbose,analytic=parser.analytic)
+    args=parser.parse_args()
+    my_sampler=Sampler(args.config,
+    analytic=args.analytic)
     my_sampler.sample()
