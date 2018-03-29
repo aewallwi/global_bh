@@ -1,7 +1,7 @@
 #*************************************************
 #The following parameters are general run settings.
 #*************************************************
-DATAFILE: /home/b/bmg/aaronew/global_bh/tables/bowman_2018.csv #global signal data file
+DATAFILE: /home/b/bmg/aaronew/global_bh/tables/bowman_2018.npy #global signal data file
 MPI: False #determine whether to use MPI
 THREADS: 1 #number of threads to run
 NSTEPS: 50000 #number of steps for each sampler

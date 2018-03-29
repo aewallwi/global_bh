@@ -122,7 +122,11 @@ class Sampler():
         #Assume first column is frequency, second column is measured brightness temp
         #and third column is the residual from fitting an empirical model
         #(see Bowman 2018)
-        self.data=np.loadtxt(self.config['DATAFILE'],skiprows=1,delimiter=',')
+        if self.config['DATAFILE'][-3:]=='csv':
+            self.data=np.loadtxt(self.config['DATAFILE'],
+            skiprows=1,delimiter=',')
+        elif self.config['DATAFILE'][-3:]=='npy':
+            self.data=np.load(self.config['DATAFILE'])
         self.freqs,self.tb_meas,self.dtb\
         =self.data[:,0],self.data[:,1],self.data[:,2]
         self.var_tb=var_resid(self.dtb,
