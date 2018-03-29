@@ -10,7 +10,6 @@ import yaml, emcee, argparse, yaml
 from settings import F21
 import global_signal_black_holes as GSBH
 import copy,sys
-from emcee.utils import MPIPool
 
 
 def delta_Tb_analytic(freq,**kwargs):
@@ -166,6 +165,7 @@ class Sampler():
         self.params_all,self.params_vary,
         self.params_vary_priors,self.analytic)
         if self.config['MPI']:
+            from emcee.utils import MPIPool
             pool=MPIPool()
             if not pool.is_master():
                 pool.wait()
