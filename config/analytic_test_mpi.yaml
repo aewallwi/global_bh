@@ -1,7 +1,7 @@
 #*************************************************
 #The following parameters are general run settings.
 #*************************************************
-DATAFILE: bowman_2018.csv #global signal data file
+DATAFILE: /Users/ewallwic/Dropbox_MIT/Aaron/Science/global_bh/global_bh/tables/bowman_2018.csv #global signal data file
 MPI: False #determine whether to use MPI
 THREADS: 1 #number of threads to run
 NSTEPS: 50000 #number of steps for each sampler

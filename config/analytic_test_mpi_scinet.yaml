@@ -3,12 +3,12 @@
 #*************************************************
 DATAFILE: /home/b/bmg/aaronew/global_bh/tables/bowman_2018.csv #global signal data file
 MPI: False #determine whether to use MPI
-THREADS: 2 #number of threads to run
+THREADS: 1 #number of threads to run
 NSTEPS: 50000 #number of steps for each sampler
 NWALKERS: 10 #number of MCMC walkers
-OUTPUT_NAME: test_analytic.npz #name of output file. 
+OUTPUT_NAME: test_analytic_mpi.npz #name of output file. 
 NPTS_NOISE_EST: 20 #number of points to estimate std from
-MPI: False #set to true if you are using open MPI
+MPI: True #set to true if you are using open MPI
 #**************************************************
 #We specify the default values of all model parameters
 #in this section, including the parameters that we are

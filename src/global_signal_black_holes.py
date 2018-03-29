@@ -12,7 +12,7 @@ from cosmo_utils import *
 import scipy.interpolate as interp
 import copy
 import matplotlib.pyplot as plt
-import radio_background as RB
+#import radio_background as RB
 #mport camb
 import os
 from settings import DEBUG
