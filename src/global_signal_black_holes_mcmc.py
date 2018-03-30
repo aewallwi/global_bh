@@ -178,12 +178,14 @@ class Sampler():
             self.sampler=emcee.EnsembleSampler(nwalkers,ndim,lnprob,
             args=args,threads=self.config['THREADS'])
             self.sampler.run_mcmc(p0,self.config['NSTEPS'])
-        if not os.path.exists(self.config['PROJECT_NAME'])):
+        if not os.path.exists(self.config['PROJECT_NAME']):
             os.makedir(self.config['PROJECT_NAME']))
         #save output and configuration
-        with open(self.config['PROJECT_NAME']+'/config.yaml','w') as yaml_file:
-            yaml.dump(self.config,yaml_file,default_flow_style=False)
-            np.save(self.config['PROJECT_NAME']+'/chain.npy',self.sampler.chain)
+            with open(self.config['PROJECT_NAME']+'/config.yaml','w')\
+             as yaml_file:
+                yaml.dump(self.config,yaml_file,default_flow_style=False)
+                np.save(self.config['PROJECT_NAME']+'/chain.npy',
+                self.sampler.chain)
 
 
 '''
