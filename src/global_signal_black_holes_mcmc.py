@@ -179,7 +179,7 @@ class Sampler():
             args=args,threads=self.config['THREADS'])
             self.sampler.run_mcmc(p0,self.config['NSTEPS'])
         if not os.path.exists(self.config['PROJECT_NAME']):
-            os.makedir(self.config['PROJECT_NAME']))
+            os.makedir(self.config['PROJECT_NAME'])
         #save output and configuration
             with open(self.config['PROJECT_NAME']+'/config.yaml','w')\
              as yaml_file:
