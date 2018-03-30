@@ -12,6 +12,6 @@ cd $PBS_O_WORKDIR
 
 WORKDIR=/home/b/bmg/aaronew/global_bh/
 
-mpirun -np 10 python \
+mpirun -np 8 python \
 $WORKDIR/src/global_signal_black_holes_mcmc.py -c \
 $WORKDIR/config/analytic_test_mpi_scinet.yaml
