@@ -181,11 +181,11 @@ class Sampler():
         if not os.path.exists(self.config['PROJECT_NAME']):
             os.makedirs(self.config['PROJECT_NAME'])
         #save output and configuration
-            with open(self.config['PROJECT_NAME']+'/config.yaml','w')\
-             as yaml_file:
-                yaml.dump(self.config,yaml_file,default_flow_style=False)
-                np.save(self.config['PROJECT_NAME']+'/chain.npy',
-                self.sampler.chain)
+        with open(self.config['PROJECT_NAME']+'/config.yaml','w')\
+         as yaml_file:
+            yaml.dump(self.config,yaml_file,default_flow_style=False)
+            np.save(self.config['PROJECT_NAME']+'/chain.npy',
+            self.sampler.chain)
 
 
 '''
