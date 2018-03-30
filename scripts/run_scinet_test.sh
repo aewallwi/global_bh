@@ -12,4 +12,4 @@ WORKDIR=/home/b/bmg/aaronew/global_bh/
 
 mpirun -np 10 python \
 $WORKDIR/src/global_signal_black_holes_mcmc.py -c \
-$WORKDIR/config/analytic_test_mpi.yaml
+$WORKDIR/config/analytic_test_mpi_scinet.yaml
