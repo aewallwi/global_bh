@@ -1,7 +1,7 @@
 #!/bin/bash
 # MOAB/Torque submission script for SciNet GPC
 #
-#PBS -l nodes=2:ppn=5,walltime=1:00:00
+#PBS -l nodes=1:ppn=8,walltime=1:00:00
 #PBS -N test
 # load modules (must match modules used for compilation)
 module load anaconda3
