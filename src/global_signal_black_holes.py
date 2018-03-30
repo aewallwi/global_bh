@@ -11,7 +11,6 @@ from settings import N_INTERP_X,TCMB0,ARAD,ME,TCMB0,HPLANCK_EV,NB0_CM
 from cosmo_utils import *
 import scipy.interpolate as interp
 import copy
-import matplotlib.pyplot as plt
 #import radio_background as RB
 #mport camb
 import os
