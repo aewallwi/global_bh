@@ -9,7 +9,7 @@ import numpy as np
 import yaml, emcee, argparse, yaml
 from settings import F21
 import global_signal_black_holes as GSBH
-import copy,sys
+import copy,sys,os
 
 
 def delta_Tb_analytic(freq,**kwargs):
