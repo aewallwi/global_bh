@@ -1,14 +1,16 @@
 #*************************************************
 #The following parameters are general run settings.
 #*************************************************
-DATAFILE: /Users/ewallwic/Dropbox_MIT/Aaron/Science/global_bh/global_bh/tables/bowman_2018.csv #global signal data file
-MPI: False #determine whether to use MPI
-THREADS: 1 #number of threads to run
-NSTEPS: 50000 #number of steps for each sampler
-NWALKERS: 10 #number of MCMC walkers
-PROJECT_NAME: test_analytic_mpi #name of output file. 
+DATAFILE: /Users/ewallwic/Dropbox_MIT/Aaron/Science/global_bh/global_bh/tables/bowman_2018_fg_and_t21.csv #global signal data file
+MPI: True #determine whether to use MPI
+THREADS: 2 #number of threads to run
+NSTEPS: 5000 #number of steps for each sampler
+NWALKERS: 18 #number of MCMC walkers
+PROJECT_NAME: test_analytic #name of output file.
 NPTS_NOISE_EST: 20 #number of points to estimate std from
-MPI: True #set to true if you are using open MPI
+MPI: False #set to true if you are using open MPI
+SAMPLE_BALL: .01
+NBURN: 1000
 #**************************************************
 #We specify the default values of all model parameters
 #in this section, including the parameters that we are
@@ -16,10 +18,16 @@ MPI: True #set to true if you are using open MPI
 #parameters to fit.
 #**************************************************
 PARAMS: #this section specifies settings for all model parameters
-    NU0: 80. #Analytic central frequency
-    TAU: 0.  #flatness parameter
-    A:  350. #Amplitude parameter
-    W:  20.  #Width parameter.
+    NU0: 78.3 #Analytic central frequency
+    TAU: 6.5  #flatness parameter
+    A:  .520 #Amplitude parameter
+    W:  20.7  #Width parameter.
+    NPOLY: 5
+    APOLY0: 1700.
+    APOLY1: 600.
+    APOLY2: -1200.
+    APOLY3: 750.
+    APOLY4: -175.
 #**************************************************
 #PARAMS2VARY is a list of parameter names that will
 #be fit by the MCMC.
@@ -29,6 +37,11 @@ PARAMS2VARY: #specify the names of parameters that will be fitted
     - TAU
     - A
     - W
+    - APOLY0
+    - APOLY1
+    - APOLY2
+    - APOLY3
+    - APOLY4
 #**************************************************
 #PRIORS specifies prior distributions on our fitting
 #parameters.
@@ -40,12 +53,12 @@ PARAMS2VARY: #specify the names of parameters that will be fitted
 PRIORS:
   NU0:
     TYPE: UNIFORM
-    MIN: 70.
-    MAX: 80.
+    MIN: 50.
+    MAX: 150.
   TAU:
     TYPE: UNIFORM
     MIN: 0.
-    MAX: 10.
+    MAX: 20.
   A:
     TYPE: UNIFORM
     MIN: 0.
@@ -54,3 +67,23 @@ PRIORS:
     TYPE: UNIFORM
     MIN: 1.
     MAX: 100.
+  APOLY0:
+    TYPE: UNIFORM
+    MIN: -10000
+    MAX: 10000
+  APOLY1:
+    TYPE: UNIFORM
+    MIN: -10000
+    MAX: 10000
+  APOLY2:
+    TYPE: UNIFORM
+    MIN: -10000
+    MAX: 10000
+  APOLY3:
+    TYPE: UNIFORM
+    MIN: -10000
+    MAX: 10000
+  APOLY4:
+    TYPE: UNIFORM
+    MIN: -10000
+    MAX: 10000
