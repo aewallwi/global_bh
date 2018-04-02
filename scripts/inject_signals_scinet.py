@@ -26,4 +26,4 @@ for signal_file in signal_list[:1]:
     %(config['PROJECT_NAME']+'/config.yaml',
     '/home/b/bmg/aaronew/global_bh/scripts/')
     print(cmd)
-    os.system()
+    os.system(cmd)
