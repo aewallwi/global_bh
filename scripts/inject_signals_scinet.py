@@ -14,7 +14,7 @@ with open('/home/b/bmg/aaronew/global_bh/config/injection_template_scinet.yaml',
 'r') as ymlfile:
     config=yaml.load(ymlfile)
 ymlfile.close()
-for signal_file in signal_list:
+for batchnum,signal_file in enumerate(signal_list[:1]):
     config['DATA_FILE']=signal_file
     config['PROJECT_NAME']=output+signal_file.split('/')[-1][:-4]
     if not os.path.exists(config['PROJECT_NAME']):
@@ -26,5 +26,4 @@ for signal_file in signal_list:
     %(config['PROJECT_NAME']+'/config.yaml',
     '/home/b/bmg/aaronew/global_bh/scripts/')
     print(cmd)
-
-    #os.system()
+    os.system()
