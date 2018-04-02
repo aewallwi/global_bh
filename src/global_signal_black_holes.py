@@ -6,7 +6,7 @@ from settings import M_INTERP_MIN,LITTLEH,PI,JY,DH,MP,MSOL,TH,KBOLTZMANN
 from settings import N_INTERP_Z,N_INTERP_MBH,Z_INTERP_MAX,Z_INTERP_MIN,ERG
 from settings import M_INTERP_MAX,KPC,F_HE,F_H,YP,BARN,YR,EV,ERG,F21
 from settings import N_TSTEPS,E_HI_ION,E_HEI_ION,E_HEII_ION,SIGMAT
-from settings import KBOLTZMANN_KEV,NH0,NH0_CM,NHE0_CM,NHE0,C,LEDD
+from settings import KBOLTZMANN_KEV,NH0,NH0_CM,NHE0_CM,NHE0,C,LEDD,DIRNAME
 from settings import N_INTERP_X,TCMB0,ARAD,ME,TCMB0,HPLANCK_EV,NB0_CM
 from cosmo_utils import *
 import scipy.interpolate as interp
@@ -15,6 +15,28 @@ import copy
 #mport camb
 import os
 from settings import DEBUG
+from joblib import Parallel, delayed
+
+def rho_stellar_z(z,**kwargs):
+    g=lambda x: massfunc(10.**x,z)*10.**x
+    if kwargs['MASSLIMUNITS']=='KELVIN':
+        limlow=np.log10(tvir2mvir(kwargs['TMIN_STARS'],
+        z))
+    else:
+        limlow=np.log10(kwargs['MMIN_STARS'])
+    return integrate.quad(g,limlow,20.)[0]
+
+def rho_bh_seeds_z(z,**kwargs):
+    g=lambda x: massfunc(10.**x,z)*10.**x
+    if kwargs['MASSLIMUNITS']=='KELVIN':
+        limlow=np.log10(tvir2mvir(kwargs['TMIN_HALO'],
+        z))
+        limhigh=np.log10(tvir2mvir(kwargs['TMAX_HALO'],
+        z))
+    else:
+        limlow=np.log10(kwargs['MMIN_HALO'])
+        limhigh=np.log10(kwargs['MMAX_HALO'])
+    return integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
 
 def rho_stellar(z,mode='derivative',**kwargs):
     '''
@@ -22,20 +44,18 @@ def rho_stellar(z,mode='derivative',**kwargs):
     at redshift z for **kwargs model
     '''
     splkey=('rho','coll')+dict2tuple(kwargs)
-    if not SPLINE_DICT.has_key(splkey+('integral','stellar')):
+    if not splkey+('integral','stellar') in SPLINE_DICT:
         print('Calculating Collapsed Fraction')
         taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
         1.1*COSMO.age(kwargs['ZMIN_STARS']),kwargs['NTIMES'])
         zaxis=COSMO.age(taxis,inverse=True)
         rho_halos=np.zeros_like(zaxis)
-        for tnum in range(len(taxis)):
-            g=lambda x: massfunc(10.**x,zaxis[tnum])*10.**x
-            if kwargs['MASSLIMUNITS']=='KELVIN':
-                limlow=np.log10(tvir2mvir(kwargs['TMIN_STARS'],
-                zaxis[tnum]))
-            else:
-                limlow=np.log10(kwargs['MMIN_STARS'])
-            rho_halos[tnum]=integrate.quad(g,limlow,20.)[0]
+        if kwargs['MULTIPROCESS']:
+            rho_halos=np.array(Parallel(n_jobs=kwargs['NPARALLEL'])\
+            (delayed(rho_stellar_z)(zval,**kwargs) for zval in zaxis))
+        else:
+            for znum,zval in enumerate(zaxis):
+                rho_halos[znum]=rho_stellar_z(zval,**kwargs)
         SPLINE_DICT[splkey+('integral','stellar')]\
         =interp.UnivariateSpline(taxis,np.log(rho_halos))
         SPLINE_DICT[splkey+('derivative','stellar')]\
@@ -49,7 +69,7 @@ def rho_stellar(z,mode='derivative',**kwargs):
 
 def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',**kwargs):
     splkey=('rho_bh','rk')+dict2tuple(kwargs)
-    if not SPLINE_DICT.has_key(splkey):
+    if not splkey in SPLINE_DICT:
         print('Growing Black Holes')
         taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
         1.1*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
@@ -63,17 +83,13 @@ def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',**kwargs):
         rho_bh_quiescent=np.zeros_like(zaxis)
         rho_bh_accreting=np.zeros_like(zaxis)
         t_seed_max=COSMO.age(kwargs['Z_SEED_MIN'])
-        for tnum in range(len(taxis_seeds)):
-            g=lambda x: massfunc(10.**x,zaxis[tnum])*10.**x
-            if kwargs['MASSLIMUNITS']=='KELVIN':
-                limlow=np.log10(tvir2mvir(kwargs['TMIN_HALO'],
-                zaxis_seeds[tnum]))
-                limhigh=np.log10(tvir2mvir(kwargs['TMAX_HALO'],
-                zaxis_seeds[tnum]))
-            else:
-                limlow=np.log10(kwargs['MMIN_HALO'])
-                limhigh=np.log10(kwargs['MMAX_HALO'])
-            rho_seeds[tnum]=integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
+        #allow for multiprocessing in computing black hole seed density.
+        if kwargs['MULTIPROCESS']:
+            rho_seeds=np.array(Parallel(n_jobs=kwargs['NPARALLEL'])\
+            (delayed(rho_bh_seeds_z)(zval,**kwargs) for zval in zaxis_seeds))
+        else:
+            for znum,zval in enumerate(zaxis_seeds):
+                rho_seeds[znum]=rho_bh_seeds_z(zval,**kwargs)
         seed_spline=interp.UnivariateSpline(taxis_seeds,rho_seeds,ext=2)
         #define black hole integrand
         rho_bh_accreting[0]=0.
@@ -346,6 +362,15 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
         qvals_He[tnum]=qvals_He[tnum-1]+dq_He
     return taxis,zaxis,qvals,tau_vals
 
+def Jalpha_summand(n,z,mode='agn'):
+    if mode=='agn':
+        return integrate.quad(lambda x:
+        emissivity_uv(x,e_ly_n(n)*(1.+x)/(1.+z),mode='number',
+        obscured=False,**kwargs)/COSMO.Ez(x),z,zmax(z,n))[0]*pn_alpha(n)
+    elif mode=='stars':
+        return integrate.quad(lambda x:
+        emissivity_lyalpha_stars(x,e_ly_n(n)*(1.+x)/(1.+z),
+        mode='number',**kwargs)/COSMO.Ez(x),z,zmax(z,n))[0]*pn_alpha(n)
 
 
 def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
@@ -385,8 +410,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
         jx_matrix=[]
         xray_matrix=[]
         dtau_matrix=[]
-    dirname,filename=os.path.split(os.path.abspath(__file__))
-    recfast=np.loadtxt(dirname+'/recfast_LCDM.dat')
+    recfast=np.loadtxt(DIRNAME+'/../tables/recfast_LCDM.dat')
     if verbose: print('Initialzing xe and Tk with recfast values.')
     xes[0]=interp.interp1d(recfast[:,0],recfast[:,1])(zhigh)
     Tks[0]=interp.interp1d(recfast[:,0],recfast[:,-1])(zhigh)
@@ -395,7 +419,9 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
     Tspins[0]=tspin(xcolls[0],xalphas[0],Tks[0],Talphas[0],TCMB0/aaxis[0])
     if verbose: print('Initializing Interpolation.')
     init_interpolation_tables()
-    print('Starting Evolution at z=%.2f, xe=%.2e, Tk=%.2f'%(zaxis[0],xes[0],Tks[0]))
+    if verbose:
+         print('Starting Evolution at z=%.2f, xe=%.2e, Tk=%.2f'\
+         %(zaxis[0],xes[0],Tks[0]))
     for tnum in range(1,len(taxis)):
         zval,tval,aval=zaxis[tnum-1],taxis[tnum-1],aaxis[tnum-1]
         xe,tk,qval=xes[tnum-1],Tks[tnum-1],q_ion[tnum-1]
@@ -413,15 +439,18 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
         #emissivity_uv(x,e_ly_n*(1.+x)/(1.+zaxis[tnum]),mode='number')\
         #/COSMO.Ez(x),zval,zmax(zaxis[tnum],n))[0]*pn_alpha(n)\
         #*DH/aval**2./4./PI/(1e3*KPC*1e2)*LITTLEH**3.
-            for n in range(2,31):
-                Jalphas[tnum]=Jalphas[tnum]+integrate.quad(lambda x:
-                emissivity_uv(x,e_ly_n(n)*(1.+x)/(1.+zaxis[tnum]),mode='number',
-                obscured=False,**kwargs)/COSMO.Ez(x),zaxis[tnum],
-                zmax(zaxis[tnum],n))[0]*pn_alpha(n)
-                Jalphas_stars[tnum]=Jalphas_stars[tnum]+integrate.quad(lambda x:
-                emissivity_lyalpha_stars(x,e_ly_n(n)*(1.+x)/(1.+zaxis[tnum]),
-                mode='number',**kwargs)/COSMO.Ez(x),zaxis[tnum],
-                zmax(zaxis[tnum],n))[0]*pn_alpha(n)
+            if kwargs['MULTIPROCESS']:
+                Jalphas[tnum]=np.array(Parallel(n_jobs=kwargs['NPARALLEL']\
+                (delayed(Jalpha_summand)(n,zaxis[tnum])\
+                for n in range(2,31))))
+                Jalphas_stars[tnum]=np.array(Parallel(n_jobs=kwargs['NPARALLEL']\
+                (delayed(Jalpha_summand)(n,zaxis[tnum],mode='stars')\
+                for n in range(2,31))))
+            else:
+                for n in range(2,31):
+                    Jalphas[tnum]=Jalphas[tnum]+Jalpha_summand(n,zaxis[tnum])
+                    Jalphas_stars[tnum]=Jalphas_stars[tnum]+Jalpha_summand(n,
+                    zaxis[tnum],mode='stars')
 
             Jalphas[tnum]=kwargs['ALPHA_FACTOR']\
             *Jalphas[tnum]*DH/aval**2./4./PI\

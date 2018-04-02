@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from colossus.cosmology import cosmology
 TCMB0=2.73
 PI=np.pi
@@ -56,6 +57,7 @@ NHE0=NH0*YP/4./(1.-YP)
 NHE0_CM=NH0_CM*YP/4./(1.-YP)
 NB0=NH0+NHE0
 NB0_CM=NH0_CM+NHE0_CM
+DIRNAME,_=os.path.split(os.path.abspath(__file__))
 LY_N_ALPHA_SWITCH={0:1.,
                    1:1.,
                    2:1.,

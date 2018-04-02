@@ -7,13 +7,12 @@ import scipy.integrate as integrate
 import scipy.interpolate as interpolate
 from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
 from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0,NH0_CM,YP,KPC
-from settings import POP_III_ION,POP_II_ION
+from settings import POP_III_ION,POP_II_ION,DIRNAME
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
 import scipy.interpolate as interp
 from settings import LY_N_ALPHA_SWITCH
-DIRNAME,_=os.path.split(os.path.abspath(__file__))
 
 
 #*********************************************************
@@ -97,7 +96,7 @@ def tvir2mvir(t,z,mu=1.22):
 def stellar_spectrum(E_uv_in,**kwargs):
     E_uv=E_uv_in/(.75*1e3*E_HI_ION)#Units of ly-alpha energy
     splkey=('stellar_spectrum',kwargs['POP'])
-    if not SPLINE_DICT.has_key(splkey):
+    if not splkey in SPLINE_DICT:
         stellar_data=np.loadtxt(DIRNAME+'../tables/stellar_spectra.dat')
         SPLINE_DICT[('stellar_spectrum','II')]=\
         np.vstack([stellar_data[:,0],
@@ -435,7 +434,7 @@ def kappa_10_HH(tk):
     https://github.com/andreimesinger/21cmFAST
     '''
     splkey=('kappa_10','HH')
-    if not SPLINE_DICT.has_key(splkey):
+    if splkey in SPLINE_DICT:
         kappa_array=\
         np.array([[1.,1.38e-13],
                   [2.,1.43e-13],
@@ -485,7 +484,7 @@ def kappa_10_eH(tk):
     https://github.com/andreimesinger/21cmFAST
     '''
     splkey=('kappa_10','eH')
-    if not SPLINE_DICT.has_key(splkey):
+    if not splkey in SPLINE_DICT:
         kappa_eH_data=np.loadtxt(DIRNAME+'/../tables/kappa_eH_table.dat')
         SPLINE_DICT[splkey]=interp.interp1d(np.log10(kappa_eH_data[:,0]),
         np.log10(kappa_eH_data[:,1]))
@@ -507,7 +506,7 @@ def kappa_10_pH(tk):
     https://github.com/andreimesinger/21cmFAST
     '''
     splkey=('kappa_10','pH')
-    if not SPLINE_DICT.has_key(splkey):
+    if not splkey in SPLINE_DICT:
         kappa_pH_data=np.loadtxt(DIRNAME+'/../kappa_pH_table.dat')
         SPLINE_DICT[splkey]=interp.interp1d(np.log10(kappa_pH_data[:,0]),
         np.log10(kappa_pH_data[:,1]))
