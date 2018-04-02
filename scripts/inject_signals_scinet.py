@@ -16,7 +16,7 @@ for signal_file in signal_list:
     config['DATA_FILE']=signal_file
     config['PROJECT_NAME']=output_dir+signal_file[:-4]
     yaml.dump(config,config['PROJECT_NAME']+'/config.yaml')
-    cmd='qsub -v CONFIG=\'%s\' %s\signal_injection_scinet.sh'(%config['PROJECT_NAME'],
+    cmd='qsub -v CONFIG=\'%s\' %s\signal_injection_scinet.sh'%(config['PROJECT_NAME'],
     '/home/b/bmg/aaronew/global_bh/scripts/')
     print(cmd)
 
