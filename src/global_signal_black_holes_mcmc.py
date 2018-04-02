@@ -239,8 +239,12 @@ class Sampler():
         with open(self.config['PROJECT_NAME']+'/config.yaml','w')\
          as yaml_file:
             yaml.dump(self.config,yaml_file,default_flow_style=False)
-            np.save(self.config['PROJECT_NAME']+'/chain.npy',
-            self.sampler.chain)
+        with open(self.config['PROJECT_NAME']+'/ml_params.yaml','w')\
+         as yaml_file:
+            yaml.dump(self.params_all,yaml_file,default_flow_style=False)
+        yaml_file.close()
+        np.save(self.config['PROJECT_NAME']+'/chain.npy',
+        self.sampler.chain)
 
 
 
