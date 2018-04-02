@@ -10,12 +10,16 @@ output='/home/b/bmg/aaronew/global_bh/signal_injections/'
 if not os.path.exists(output):
     os.mkdir(output)
 #load up template .yaml file
-config=\
-yaml.load('/home/b/bmg/aaronew/global_bh/config/injection_template_scinet.yaml')
+with open('/home/b/bmg/aaronew/global_bh/config/injection_template_scinet.yaml',
+'r') as ymlfile:
+    config=yaml.load(ymlfile)
+ymlfile.close()
 for signal_file in signal_list:
     config['DATA_FILE']=signal_file
     config['PROJECT_NAME']=output+signal_file[:-4]
-    yaml.dump(config,config['PROJECT_NAME']+'/config.yaml')
+    with open(config['PROJECT_NAME']+'/config.yaml','w') as ymlfile:
+        yaml.dump(config,ymlfile,default_flow_style=False)
+    ymlfile.close()
     cmd='qsub -v CONFIG=\'%s\' %s\signal_injection_scinet.sh'%(config['PROJECT_NAME'],
     '/home/b/bmg/aaronew/global_bh/scripts/')
     print(cmd)

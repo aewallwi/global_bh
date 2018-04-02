@@ -238,6 +238,7 @@ class Sampler():
         #save output and configuration
         with open(self.config['PROJECT_NAME']+'/config.yaml','w')\
          as yaml_file:
+        yaml_file.close()
             yaml.dump(self.config,yaml_file,default_flow_style=False)
         with open(self.config['PROJECT_NAME']+'/ml_params.yaml','w')\
          as yaml_file:
