@@ -38,14 +38,14 @@ def rho_bh_seeds_z(z,**kwargs):
         limhigh=np.log10(kwargs['MMAX_HALO'])
     return integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
 
-def rho_stellar(z,mode='derivative',**kwargs):
+def rho_stellar(z,mode='derivative',verbose=False,**kwargs):
     '''
     time-derivative of collapsed matter density in msolar h^2/Mpc^3
     at redshift z for **kwargs model
     '''
     splkey=('rho','coll')+dict2tuple(kwargs)
     if not splkey+('integral','stellar') in SPLINE_DICT:
-        print('Calculating Collapsed Fraction')
+        if verbose: print('Calculating Collapsed Fraction')
         taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
         1.1*COSMO.age(kwargs['ZMIN_STARS']),kwargs['NTIMES'])
         zaxis=COSMO.age(taxis,inverse=True)
@@ -67,10 +67,10 @@ def rho_stellar(z,mode='derivative',**kwargs):
         *rho_stellar(z,mode='integral',**kwargs)
 
 
-def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',**kwargs):
+def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',verbose=False,**kwargs):
     splkey=('rho_bh','rk')+dict2tuple(kwargs)
     if not splkey in SPLINE_DICT:
-        print('Growing Black Holes')
+        if verbose: print('Growing Black Holes')
         taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
         1.1*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
         taxis_seeds=np.linspace(.8*COSMO.age(kwargs['ZMAX']),
@@ -131,7 +131,7 @@ def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',**kwargs):
         qlist=['rho_bh_accreting','rho_bh_quiescent']
         t0list=[taxis[0],taxis[0]+kwargs['TAU_FEEDBACK']]
         SPLINE_DICT[splkey]={}
-        for integrand,y,quantity,tstart in zip(intlist,ylist,qlist,t0list):
+        for integrand,y,quant,tstart in zip(intlist,ylist,qlist,t0list):
             integrator=integrate.ode(integrand)#.set_integrator('zvode',
             #method='bdf', with_jacobian=False)
             integrator.set_initial_value(y[0],tstart)
@@ -142,7 +142,7 @@ def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',**kwargs):
                 y[tnum]=integrator.y[0]
                 tnum+=1
             #print tnum
-            SPLINE_DICT[splkey][quantity]=interp.UnivariateSpline(taxis,y,ext=2)
+            SPLINE_DICT[splkey][quant]=interp.UnivariateSpline(taxis,y,ext=2)
             #print y
         SPLINE_DICT[splkey]['rho_bh_seed']\
         =interp.UnivariateSpline(taxis,rho_seeds,ext=2)
@@ -362,7 +362,7 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
         qvals_He[tnum]=qvals_He[tnum-1]+dq_He
     return taxis,zaxis,qvals,tau_vals
 
-def Jalpha_summand(n,z,mode='agn'):
+def Jalpha_summand(n,z,mode='agn',**kwargs):
     if mode=='agn':
         return integrate.quad(lambda x:
         emissivity_uv(x,e_ly_n(n)*(1.+x)/(1.+z),mode='number',
@@ -386,7 +386,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
         kwargs, dictionary of model parameters.
     '''
     #begin by calculating HII history
-    print('Computing Ionization History')
+    if verbose: print('Computing Ionization History')
     taxis,zaxis,q_ion,_=q_ionize(zlow,zhigh,ntimes,T4_HII,**kwargs)
     aaxis=1./(1.+zaxis)
     xray_axis=np.logspace(-1,3,N_INTERP_X)
@@ -419,9 +419,8 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
     Tspins[0]=tspin(xcolls[0],xalphas[0],Tks[0],Talphas[0],TCMB0/aaxis[0])
     if verbose: print('Initializing Interpolation.')
     init_interpolation_tables()
-    if verbose:
-         print('Starting Evolution at z=%.2f, xe=%.2e, Tk=%.2f'\
-         %(zaxis[0],xes[0],Tks[0]))
+    if verbose: print('Starting Evolution at z=%.2f, xe=%.2e, Tk=%.2f'\
+    %(zaxis[0],xes[0],Tks[0]))
     for tnum in range(1,len(taxis)):
         zval,tval,aval=zaxis[tnum-1],taxis[tnum-1],aaxis[tnum-1]
         xe,tk,qval=xes[tnum-1],Tks[tnum-1],q_ion[tnum-1]
@@ -439,19 +438,23 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
         #emissivity_uv(x,e_ly_n*(1.+x)/(1.+zaxis[tnum]),mode='number')\
         #/COSMO.Ez(x),zval,zmax(zaxis[tnum],n))[0]*pn_alpha(n)\
         #*DH/aval**2./4./PI/(1e3*KPC*1e2)*LITTLEH**3.
-            if kwargs['MULTIPROCESS']:
-                Jalphas[tnum]=np.array(Parallel(n_jobs=kwargs['NPARALLEL']\
-                (delayed(Jalpha_summand)(n,zaxis[tnum])\
-                for n in range(2,31))))
-                Jalphas_stars[tnum]=np.array(Parallel(n_jobs=kwargs['NPARALLEL']\
-                (delayed(Jalpha_summand)(n,zaxis[tnum],mode='stars')\
-                for n in range(2,31))))
+            if verbose: print('Computing Ly-alpha flux')
+            if kwargs['MULTIPROCESS'] is None:
+                if verbose: print('computing AGN Ly-Alpha')
+                Jalphas[tnum]=np.array(Parallel(n_jobs=kwargs['NPARALLEL'])\
+                (delayed(Jalpha_summand)(n,zaxis[tnum],**kwargs)\
+                 for n in range(2,31))).sum()
+                if verbose: print('Computing Stars Ly-Alpha')
+                Jalphas_stars[tnum]\
+                =np.array(Parallel(n_jobs=kwargs['NPARALLEL'])
+                (delayed(Jalpha_summand)(n,zaxis[tnum],mode='stars',**kwargs)\
+                 for n in range(2,31))).sum()
             else:
                 for n in range(2,31):
-                    Jalphas[tnum]=Jalphas[tnum]+Jalpha_summand(n,zaxis[tnum])
+                    Jalphas[tnum]=Jalphas[tnum]+Jalpha_summand(n,
+                    zaxis[tnum],**kwargs)
                     Jalphas_stars[tnum]=Jalphas_stars[tnum]+Jalpha_summand(n,
-                    zaxis[tnum],mode='stars')
-
+                    zaxis[tnum],mode='stars',**kwargs)
             Jalphas[tnum]=kwargs['ALPHA_FACTOR']\
             *Jalphas[tnum]*DH/aval**2./4./PI\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.*HPLANCK_EV
