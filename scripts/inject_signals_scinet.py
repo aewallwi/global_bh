@@ -17,6 +17,8 @@ ymlfile.close()
 for signal_file in signal_list:
     config['DATA_FILE']=signal_file
     config['PROJECT_NAME']=output+signal_file.split('/')[-1][:-4]
+    if not os.path.exists(config['PROJECT_NAME']):
+        os.mkdir(config['PROJECT_NAME'])
     with open(config['PROJECT_NAME']+'/config.yaml','w') as ymlfile:
         yaml.dump(config,ymlfile,default_flow_style=False)
     ymlfile.close()
