@@ -19,9 +19,9 @@ NBURN: 1000
 #**************************************************
 PARAMS: #this section specifies settings for all model parameters
     NU0: 82. #Analytic central frequency
-    TAU: 1.  #flatness parameter
-    A:  .2 #Amplitude parameter
-    W:  10.  #Width parameter.
+    TAU: .1  #flatness parameter
+    A:  .175 #Amplitude parameter
+    W:  20.7  #Width parameter.
     NPOLY: 1
     APOLY0: 2500.
 #**************************************************
