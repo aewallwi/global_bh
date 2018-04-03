@@ -4,13 +4,13 @@
 DATAFILE: /Users/ewallwic/Dropbox_MIT/Aaron/Science/global_bh/global_bh/tables/test_signal_stars_simplefg.csv #global signal data file
 MPI: False #determine whether to use MPI
 THREADS: 2 #number of threads to run
-NSTEPS: 5000 #number of steps for each sampler
+NSTEPS: 50000 #number of steps for each sampler
 NWALKERS: 16 #number of MCMC walkers
 PROJECT_NAME: test_analytic #name of output file.
 NPTS_NOISE_EST: 20 #number of points to estimate std from
 MPI: False #set to true if you are using open MPI
 SAMPLE_BALL: .01
-NBURN: 1000
+NBURN: 10000
 #**************************************************
 #We specify the default values of all model parameters
 #in this section, including the parameters that we are

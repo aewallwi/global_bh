@@ -16,7 +16,7 @@ with open('/home/b/bmg/aaronew/global_bh/config/injection_template_scinet.yaml',
 ymlfile.close()
 for signal_file in signal_list[:1]:
     print(signal_file)
-    config['DATA_FILE']=signal_file
+    config['DATAFILE']=signal_file
     config['PROJECT_NAME']=output+signal_file.split('/')[-1][:-4]
     if not os.path.exists(config['PROJECT_NAME']):
         os.mkdir(config['PROJECT_NAME'])
