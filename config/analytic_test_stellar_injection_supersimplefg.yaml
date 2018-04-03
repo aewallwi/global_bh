@@ -20,10 +20,10 @@ NBURN: 1000
 PARAMS: #this section specifies settings for all model parameters
     NU0: 82. #Analytic central frequency
     TAU: .1  #flatness parameter
-    A:  .175 #Amplitude parameter
+    A:  .16 #Amplitude parameter
     W:  20.7  #Width parameter.
     NPOLY: 1
-    APOLY0: 2500.
+    APOLY0: 1800.
 #**************************************************
 #PARAMS2VARY is a list of parameter names that will
 #be fit by the MCMC.
@@ -49,7 +49,7 @@ PRIORS:
     MAX: 1000.
   TAU:
     TYPE: UNIFORM
-    MIN: 0.
+    MIN: -100.
     MAX: 1000.
   A:
     TYPE: UNIFORM

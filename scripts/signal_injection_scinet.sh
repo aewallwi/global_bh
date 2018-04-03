@@ -13,4 +13,4 @@ SRCDIR=/home/b/bmg/aaronew/global_bh/
 
 python \
 $SRCDIR/src/global_signal_black_holes_mcmc.py -c \
-$CONFIG
+$CONFIG -a

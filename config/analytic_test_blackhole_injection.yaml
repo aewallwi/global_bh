@@ -57,7 +57,7 @@ PRIORS:
     MAX: 1000.
   TAU:
     TYPE: UNIFORM
-    MIN: 0.
+    MIN: -100.
     MAX: 1000.
   A:
     TYPE: UNIFORM
