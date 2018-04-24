@@ -1,5 +1,6 @@
 import scipy.optimize as op
 import numpy as np
+import yaml
 import scipy.integrate as integrate
 from settings import COSMO,TEDDINGTON,MBH_INTERP_MAX,MBH_INTERP_MIN,SPLINE_DICT
 from settings import M_INTERP_MIN,LITTLEH,PI,JY,DH,MP,MSOL,TH,KBOLTZMANN
@@ -46,8 +47,8 @@ def rho_stellar(z,mode='derivative',verbose=False,**kwargs):
     splkey=('rho','coll')+dict2tuple(kwargs)
     if not splkey+('integral','stellar') in SPLINE_DICT:
         if verbose: print('Calculating Collapsed Fraction')
-        taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
-        1.1*COSMO.age(kwargs['ZMIN_STARS']),kwargs['NTIMES'])
+        taxis=np.linspace(COSMO.age(kwargs['ZMAX']+.5),
+        COSMO.age(kwargs['ZMIN_STARS']-.5),kwargs['NTIMES'])
         zaxis=COSMO.age(taxis,inverse=True)
         rho_halos=np.zeros_like(zaxis)
         if kwargs['MULTIPROCESS']:
@@ -67,14 +68,14 @@ def rho_stellar(z,mode='derivative',verbose=False,**kwargs):
         *rho_stellar(z,mode='integral',**kwargs)
 
 
-def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',verbose=False,**kwargs):
+def rho_bh_runge_kutta(z,quantity='accreting',dt=False,verbose=False,**kwargs):
     splkey=('rho_bh','rk')+dict2tuple(kwargs)
     if not splkey in SPLINE_DICT:
         if verbose: print('Growing Black Holes')
-        taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
-        1.1*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
-        taxis_seeds=np.linspace(.8*COSMO.age(kwargs['ZMAX']),
-        1.2*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
+        taxis=np.linspace(COSMO.age(kwargs['ZMAX']+.5),
+        COSMO.age(kwargs['ZMIN']-.5),kwargs['NTIMES'])
+        taxis_seeds=np.linspace(COSMO.age(kwargs['ZMAX']+.75),
+        COSMO.age(kwargs['ZMIN']-.75),kwargs['NTIMES'])
         zaxis=COSMO.age(taxis,inverse=True)
         zaxis_seeds=COSMO.age(taxis_seeds,inverse=True)
         #compute density of halos in mass range
@@ -90,6 +91,8 @@ def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',verbose=False,**kwargs):
         else:
             for znum,zval in enumerate(zaxis_seeds):
                 rho_seeds[znum]=rho_bh_seeds_z(zval,**kwargs)
+        post_seed=zaxis_seeds<kwargs['Z_SEED_MIN']
+        rho_seeds[post_seed]=rho_seeds[post_seed].min()
         seed_spline=interp.UnivariateSpline(taxis_seeds,rho_seeds,ext=2)
         #define black hole integrand
         rho_bh_accreting[0]=0.
@@ -128,7 +131,7 @@ def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',verbose=False,**kwargs):
         dt=taxis[1]-taxis[0]
         intlist=[bh_accreting_integrand,bh_quiescent_integrand]
         ylist=[rho_bh_accreting,rho_bh_quiescent]
-        qlist=['rho_bh_accreting','rho_bh_quiescent']
+        qlist=['accreting','quiescent']
         t0list=[taxis[0],taxis[0]+kwargs['TAU_FEEDBACK']]
         SPLINE_DICT[splkey]={}
         for integrand,y,quant,tstart in zip(intlist,ylist,qlist,t0list):
@@ -144,15 +147,25 @@ def rho_bh_runge_kutta(z,quantity='rho_bh_accreting',verbose=False,**kwargs):
             #print tnum
             SPLINE_DICT[splkey][quant]=interp.UnivariateSpline(taxis,y,ext=2)
             #print y
-        SPLINE_DICT[splkey]['rho_bh_seed']\
+        SPLINE_DICT[splkey]['seed']\
         =interp.UnivariateSpline(taxis,rho_seeds,ext=2)
-        SPLINE_DICT[splkey]['rho_bh']\
+        SPLINE_DICT[splkey]['total']\
         =interp.UnivariateSpline(taxis,
-        SPLINE_DICT[splkey]['rho_bh_accreting'](taxis)
-        +SPLINE_DICT[splkey]['rho_bh_quiescent'](taxis),ext=2)
-    return SPLINE_DICT[splkey][quantity](COSMO.age(z))
+        SPLINE_DICT[splkey]['accreting'](taxis)
+        +SPLINE_DICT[splkey]['quiescent'](taxis),ext=2)
+    if not dt:
+        output=SPLINE_DICT[splkey][quantity](COSMO.age(z))
+    else:
+        output=SPLINE_DICT[splkey][quantity].derivative()(COSMO.age(z))
+    return output
 
 
+def xray_integral_norm(alpha,emin,emax):
+    return (1-alpha)/(emax**(1-alpha)-emin**(1-alpha))
+
+def log_normal_moment(mu,sigma,pow,base=10.):
+    pow=pow*np.log(base)
+    return np.exp(mu*pow*np.log(base)+.5*(pow*sigma)**2.)
 
 def emissivity_radio(z,freq,**kwargs):
     '''
@@ -164,10 +177,17 @@ def emissivity_radio(z,freq,**kwargs):
         kwargs, model dictionary parameters
     '''
     if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN']:
-        return 1.0e22*(kwargs['FR']/250.)*(kwargs['FX']/2e-2)**0.86\
-        *(rho_bh_runge_kutta(z,**kwargs)/1e4)*(freq/1.4e9)**(-kwargs['ALPHA_R'])\
-        *((2.4**(1.-kwargs['ALPHA_X'])-0.1**(1.-kwargs['ALPHA_X']))/\
-        (10.**(1.-kwargs['ALPHA_X']-2.**(1.-kwargs['ALPHA_X']))))
+        return 3.8e23\
+        *(log_normal_moment(kwargs['R_MEAN'],kwargs['R_STD'],1.)/1.6e4)\
+        *(kwargs['FLOUD']/.1)\
+        *(kwargs['GBOL']/.03)\
+        *(xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)\
+        *2.**(0.9-kwargs['ALPHA_X'])\
+        *(2.48e-3)**(1.6-kwargs['ALPHA_OX'])\
+        *(2.8)**(kwargs['ALPHA_R']-.6)\
+        *(4.39)**(-(kwargs['ALPHA_O1']-.61))\
+        *(rho_bh_runge_kutta(z,**kwargs)/1e4)\
+        *(freq/1e9)**(-kwargs['ALPHA_R'])
     else:
         return 0.
 
@@ -181,10 +201,15 @@ def emissivity_xrays(z,E_x,obscured=True,**kwargs):
         kwargs, model parameters dictionary
     '''
     if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN']:
-        output=2.322e48*(kwargs['FX']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
-        *(rho_bh_runge_kutta(z,**kwargs)/1e4)*(1.-kwargs['ALPHA_X'])\
-        /(10.**(1.-kwargs['ALPHA_X'])-2.**(1.-kwargs['ALPHA_X']))\
-        *np.exp(-E_x/300.)#include 300 keV exponential cutoff typical of AGN
+        output=2.5e49*((1.+kwargs['FLOUD']\
+        *log_normal_moment(kwargs['R_MEAN'],kwargs['R_STD'],1./6.)/1.3))\
+        *(kwargs['GBOL']/.03)*(xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)\
+        *(rho_bh_runge_kutta(z,**kwargs)/1e4)*(E_x)**(-kwargs['ALPHA_X'])\
+        *np.exp(-E_x/300.)
+        #output=2.322e48*(kwargs['FX']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
+        #*(rho_bh_runge_kutta(z,**kwargs)/1e4)*(1.-kwargs['ALPHA_X'])\
+        #/(10.**(1.-kwargs['ALPHA_X'])-2.**(1.-kwargs['ALPHA_X']))\
+        #*np.exp(-E_x/300.)#include 300 keV exponential cutoff typical of AGN
         if obscured:
             output=output*np.exp(-10.**kwargs['LOG10_N']*(F_H*sigma_HLike(E_x)\
             +F_HE/F_H*sigma_HeI(E_x)))
@@ -201,14 +226,24 @@ def emissivity_uv(z,E_uv,mode='energy',obscured=True,**kwargs):
         E_uv, energy of uv photon (eV)
         kwargs, model parameter dictionary
     '''
-    power_select=np.sqrt(np.sign(E_uv-13.6),dtype=complex)
-    output=3.5e3*emissivity_xrays(z,2.,obscured=False,**kwargs)*(2500./912.)**(-.61)\
-    *(E_uv/13.6)**(-0.61*np.imag(power_select)-1.71*(np.real(power_select)))
-    #add stellar contribution
-    if mode=='number':
-        output=output/E_uv
-    if obscured:
-        output=output*kwargs['F_ESC']
+    if z>=kwargs['ZMIN'] and z<=kwargs['ZMAX']:
+        power_select=np.sqrt(np.sign(E_uv-13.6),dtype=complex)
+        #output=3.5e3*emissivity_xrays(z,2.,obscured=False,**kwargs)*(2500./912.)**(-.61)\
+        #*(E_uv/13.6)**(-0.61*np.imag(power_select)-1.71*(np.real(power_select)))
+        #add stellar contribution
+        output=7.8e51*(kwargs['GBOL']/.03)\
+        *(xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)\
+        *(rho_bh_runge_kutta(z,**kwargs)/1e4)\
+        *2.**(.9-kwargs['ALPHA_X'])\
+        *(2.48e-3)**(1.6-kwargs['ALPHA_OX'])\
+        *(E_uv/13.6)**(-kwargs['ALPHA_O1']*np.imag(power_select)-kwargs['ALPHA_O2']\
+        *(np.real(power_select)))
+        if mode=='number':
+            output=output/E_uv
+        if obscured:
+            output=output*kwargs['F_ESC']
+    else:
+        output=0.
     return output
 
 def emissivity_lyalpha_stars(z,E_uv,mode='number',**kwargs):
@@ -221,8 +256,14 @@ def emissivity_lyalpha_stars(z,E_uv,mode='number',**kwargs):
     '''
     output=rho_stellar(z,mode='derivative',**kwargs)\
     *kwargs['F_STAR']*COSMO.Ob(0.)/COSMO.Om(0.)*MSOL/MP\
-    *(1.-.75*YP)*stellar_spectrum(E_uv,**kwargs)/YR/1e9\
-    *kwargs['N_ION_STARS']#convert from per Gyr to
+    *(1.-.75*YP)*stellar_spectrum(E_uv,pop='II',**kwargs)/YR/1e9\
+    *kwargs['N_ION_POPII']#convert from per Gyr to
+    if kwargs['POPIII'] and kwargs['FS']>0.:
+        output=output+rho_bh_runge_kutta(z,quantity='seed',dt=True,**kwargs)\
+        /kwargs['FS']*kwargs['F_STAR']*COSMO.Ob(0.)/COSMO.Om(0.)*MSOL/MP\
+        *(1.-.75*YP)\
+        *kwargs['N_ION_POPIII']\
+        *stellar_spectrum(E_uv,pop='III',**kwargs)/YR/1e9
     #pwer second
     if mode=='energy':
         output=output*E_uv
@@ -237,9 +278,9 @@ def emissivity_xrays_stars(z,E_x,obscured=True,**kwargs):
     '''
     if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN_STARS']:
         output=rho_stellar(z,mode='derivative',**kwargs)/1e9\
-        *kwargs['F_STAR']*COSMO.Ob(0.)/COSMO.Om(0.)*kwargs['FX_STARS']*6.242e8*3e39/LITTLEH\
-        *(1.-kwargs['ALPHA_X_STARS'])/(8.**(1.-kwargs['ALPHA_X_STARS'])\
-        -0.5**(1.-kwargs['ALPHA_X_STARS']))
+        *kwargs['F_STAR']*COSMO.Ob(0.)/COSMO.Om(0.)\
+        *kwargs['FX_STARS']*ERG*3e39*1e9/LITTLEH\
+        *xray_integral_norm(kwargs['ALPHA_X_STARS'],0.5,8)
         if obscured:
             output=output*np.exp(-10.**kwargs['LOG10_N_STARS']*(F_H*sigma_HLike(E_x)\
             +F_HE/F_H*sigma_HeI(E_x)))
@@ -303,7 +344,7 @@ def ndot_uv(z,E_low=13.6,E_high=np.infty,**kwargs):
         E_high, higher photon energy (eV)
     '''
     return (emissivity_uv(z,E_low,**kwargs)\
-    -emissivity_uv(z,E_high,**kwargs))/(1.7)
+    -emissivity_uv(z,E_high,**kwargs))/(kwargs['ALPHA_O2'])
 
 def ndot_uv_stars(z,**kwargs):
     '''
@@ -313,9 +354,13 @@ def ndot_uv_stars(z,**kwargs):
         z, redshift
         kwargs, model parameters
     '''
-    return kwargs['N_ION_STARS']*kwargs['F_STAR']*kwargs['F_ESC_STARS']\
+    return kwargs['N_ION_POPII']*kwargs['F_STAR']*kwargs['F_ESC_STARS']\
     *rho_stellar(z,mode='derivative',**kwargs)\
     *MSOL/MP/LITTLEH/1e9/YR*(1.-.75*YP)
+    if kwargs['POPIII'] and kwargs['FS']>0.:
+        output=output+kwargs['N_ION_POPIII']*kwargs['F_STAR']*kwargs['F_ESC']\
+        *rho_bh_runge_kutta(z,quantity='seed',dt=True)/kwargs['FS']\
+        *MSOL/MP/LITTLEH/1e9/YR*(1.-.75*YP)
     #return kwargs['ZETA_ION']*rho_stellar(z,mode='derivative',**kwargs)\
     #*MSOL/MP/LITTLEH/1e9/YR*(1.-.75*YP)
 
@@ -342,13 +387,16 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
     qvals_He=np.zeros_like(qvals)
     tau_vals=np.zeros_like(qvals)
     chi=YP/4./(1.-YP)
+    #define integrand for helium ionization
+    #define integrand for hydrogen ionization
     for tnum in range(1,len(qvals)):
         dz=-zaxis[tnum]+zaxis[tnum-1]
         tval,zval=taxis[tnum-1],zaxis[tnum-1]
-        trec_inv=alpha_B(T4)*NH0_CM*(1.+chi)*(1.+zval)*clumping_factor(zval)
-        trec_He_inv=alpha_B(T4)*NH0_CM*(1.+2.*chi)*(1.+zval)**3.\
+        trec_inv=alpha_A(T4)*NH0_CM*(1.+chi)*(1.+zval)**3.\
         *clumping_factor(zval)
-        dq=-qvals[tnum-1]*trec_inv
+        trec_He_inv=alpha_A(T4)*NH0_CM*(1.+2.*chi)*(1.+zval)**3.\
+        *clumping_factor(zval)
+        dq=-qvals[tnum-1]*trec_inv*dt
         dq_He=-qvals_He[tnum-1]*trec_He_inv*dt
         if zval>=kwargs['ZMIN'] and zval<=kwargs['ZMAX']:
             dq=dq+ndot_uv(zval,E_low=13.6,E_high=4.*13.6,**kwargs)/NH0*dt
@@ -455,7 +503,8 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
                     zaxis[tnum],**kwargs)
                     Jalphas_stars[tnum]=Jalphas_stars[tnum]+Jalpha_summand(n,
                     zaxis[tnum],mode='stars',**kwargs)
-            Jalphas[tnum]=kwargs['ALPHA_FACTOR']\
+            #kwargs['ALPHA_FACTOR']\
+            Jalphas[tnum]=1.\
             *Jalphas[tnum]*DH/aval**2./4./PI\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.*HPLANCK_EV
             Jalphas_stars[tnum]=Jalphas_stars[tnum]*DH/aval**2./4./PI\
@@ -465,7 +514,8 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
             *((1.-xe)*NH0_CM*sigma_HLike(xrays)\
             +(1.-xe)*NHE0_CM*sigma_HeI(xrays)\
             +xe*NHE0_CM*sigma_HLike(xrays,z=2.))
-            dtaus[xrays<kwargs['EX_MIN']]=9e99
+            #dtaus[xrays<kwargs['EX_MIN']]=9e99
+            dtaus[xrays<.0136]=9e99
             #subtract emissivity since dz is negative
             jxs=(jxs*aval**3.\
             -(emissivity_xrays(zval,xrays,**kwargs)+
@@ -494,7 +544,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
             g=lambda x:ionization_integrand(np.exp(x),xe,jxfunc)
             gamma_ion=integrate.quad(g,lxmin,lxmax)[0]
             dxe=(gamma_ion\
-            -alpha_A(tk/1e4)*xe**2.*NH0_CM/aval**3.*clumping_factor(zval))*dt
+            -alpha_B(tk/1e4)*xe**2.*NH0_CM/aval**3.*clumping_factor(zval))*dt
             #Compute secondary Ly-alpha photons from X-rays
             g=lambda x:xray_lyalpha_integrand(np.exp(x),x,jxfunc)
             Jalphas[tnum]=Jalphas[tnum]+integrate.quad(g,lxmin,lxmax)[0]\
@@ -532,3 +582,59 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
         output['xrays']=np.array(xray_matrix)
         output['taus']=np.array(dtau_matrix)
     return output
+
+
+
+
+class GlobalSignal():
+    '''
+    This class stores global signal and runs simulations
+    '''
+    def __init__(self,config_file):
+        '''
+        Initialize a global signal object.
+        Args:
+            config_file: string pointing to .yaml file with model parameters
+        '''
+        self.config_file=config_file
+        with open(config_file,'r') as yamlfile:
+            yamldict=yaml.load(yamlfile)
+            self.config=yamldict['CONFIG']
+            self.params=yamldict['PARAMS']
+            del yamldict
+            self.param_vals={}
+            for key in self.params:
+                self.param_vals[key]=self.params[key]['P0']
+        self.param_vals['MULTIPROCESS']=self.config['MULTIPROCESS']
+        self.param_vals['NPARALLEL']=self.config['NPARALLEL']
+        self.param_vals['MASSLIMUNITS']=self.config['MASSLIMUNITS']
+        self.param_vals['FEEDBACK']=self.config['FEEDBACK']
+        self.param_vals['POPIII']=self.config['POPIII']
+        self.param_history=[]#list of parameters for each calculation
+        self.global_signals={}#list of global signals to store
+    def set(self,key,value):
+        '''
+        set a parameter value
+        Args:
+            key, name of the parameter ot set.
+            value: value to set the parameter to.
+        '''
+        self.param_vals[key]=value
+        self.param_history.append(copy.deepcopy(self.param_vals))
+    def increment(self,key,dvalue,log=False,base=10.):
+        '''
+        increment the value of a parameter
+        Args:
+            key, name of parameter to set
+            value, value to set the parameter to.
+        '''
+        assert key not in ['MASSLIMUNITS','NPARALLEL','MULTIPROCESS','FEEDBACK']
+        if not log:
+            self.param_vals[key]=self.param_vals[key]+dvalue
+        else:
+            self.param_vals[key]=self.param_vals[key]*10.**dvalue
+        self.param_history.append(copy.deepcopy(self.param_vals))
+    def calculate_global(self):
+        self.global_signals[dict2tuple(self.param_vals)]=delta_Tb(\
+        zlow=self.config['ZLOW'],zhigh=self.config['ZHIGH'],
+        ntimes=self.config['NTIMESGLOBAL'],**self.param_vals)
