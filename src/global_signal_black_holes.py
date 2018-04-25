@@ -18,14 +18,16 @@ import os
 from settings import DEBUG
 from joblib import Parallel, delayed
 
-def rho_stellar_z(z,**kwargs):
+def rho_stellar_z(z,pop,**kwargs):
     g=lambda x: massfunc(10.**x,z)*10.**x
     if kwargs['MASSLIMUNITS']=='KELVIN':
-        limlow=np.log10(tvir2mvir(kwargs['TMIN_STARS'],
+        limlow=np.log10(tvir2mvir(kwargs['TMIN_POP'+pop],
         z))
+        limhigh=np.min([20.,np.log10(tvir2mvir(kwargs['TMAX_POP'+pop],z))])
     else:
-        limlow=np.log10(kwargs['MMIN_STARS'])
-    return integrate.quad(g,limlow,20.)[0]
+        limlow=np.log10(kwargs['MMIN_POP'+pop])
+        limhigh=np.min([20.,np.log10(kwargs['MMAX_POP'+pop])])
+    return integrate.quad(g,limlow,limhigh)[0]
 
 def rho_bh_seeds_z(z,**kwargs):
     g=lambda x: massfunc(10.**x,z)*10.**x
@@ -39,33 +41,38 @@ def rho_bh_seeds_z(z,**kwargs):
         limhigh=np.log10(kwargs['MMAX_HALO'])
     return integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
 
-def rho_stellar(z,mode='derivative',verbose=False,**kwargs):
+def rho_stellar(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs):
     '''
     time-derivative of collapsed matter density in msolar h^2/Mpc^3
     at redshift z for **kwargs model
     '''
-    splkey=('rho','coll')+dict2tuple(kwargs)
+    splkey=('rho','coll',pop)+dict2tuple(kwargs)
     if not splkey+('integral','stellar') in SPLINE_DICT:
         if verbose: print('Calculating Collapsed Fraction')
         taxis=np.linspace(COSMO.age(kwargs['ZMAX']+.5),
-        COSMO.age(kwargs['ZMIN_STARS']-.5),kwargs['NTIMES'])
+        COSMO.age(kwargs['ZMIN_POP'+pop]-.5),kwargs['NTIMES'])
         zaxis=COSMO.age(taxis,inverse=True)
         rho_halos=np.zeros_like(zaxis)
         if kwargs['MULTIPROCESS']:
             rho_halos=np.array(Parallel(n_jobs=kwargs['NPARALLEL'])\
-            (delayed(rho_stellar_z)(zval,**kwargs) for zval in zaxis))
+            (delayed(rho_stellar_z)(zval,pop,**kwargs) for zval in zaxis))
         else:
             for znum,zval in enumerate(zaxis):
-                rho_halos[znum]=rho_stellar_z(zval,**kwargs)
+                rho_halos[znum]=rho_stellar_z(zval,pop,**kwargs)
+        rho_halos[rho_halos<=0.]=1e-99
         SPLINE_DICT[splkey+('integral','stellar')]\
         =interp.UnivariateSpline(taxis,np.log(rho_halos))
         SPLINE_DICT[splkey+('derivative','stellar')]\
         =interp.UnivariateSpline(taxis,np.log(rho_halos)).derivative()
     if mode=='integral':
-        return np.exp(SPLINE_DICT[splkey+(mode,'stellar')](COSMO.age(z)))
+        output=np.exp(SPLINE_DICT[splkey+(mode,'stellar')](COSMO.age(z)))
     else:
-        return SPLINE_DICT[splkey+(mode,'stellar')](COSMO.age(z))\
-        *rho_stellar(z,mode='integral',**kwargs)
+        output=SPLINE_DICT[splkey+(mode,'stellar')](COSMO.age(z))\
+        *rho_stellar(z,pop=pop,mode='integral',**kwargs)
+    if fractional:
+        output=output/(COSMO.Om(0.)*COSMO.rho_b(0.)/COSMO.Ob(0.)*(1e3)**3.)
+
+    return output
 
 
 def rho_bh_runge_kutta(z,quantity='accreting',dt=False,verbose=False,**kwargs):
@@ -102,7 +109,7 @@ def rho_bh_runge_kutta(z,quantity='accreting',dt=False,verbose=False,**kwargs):
             def bh_accreting_integrand(t,y):
                 output=y/kwargs['TAU_GROW']
                 if t<=t_seed_max:
-                    output=output+seed_spline.derivative()(t)
+                    output=ofndutput+seed_spline.derivative()(t)
                 return output
             def bh_quiescent_integrand(t,rho_bh):
                 return 0.
@@ -246,7 +253,7 @@ def emissivity_uv(z,E_uv,mode='energy',obscured=True,**kwargs):
         output=0.
     return output
 
-def emissivity_lyalpha_stars(z,E_uv,mode='number',**kwargs):
+def emissivity_lyalpha_stars(z,E_uv,pop,mode='number',**kwargs):
     '''
     Number of photons per second per frequency interval emitted from stars
     between 912 Angstroms and Ly-alpha transition
@@ -254,36 +261,29 @@ def emissivity_lyalpha_stars(z,E_uv,mode='number',**kwargs):
     Args:
         E_uv,photon energy (eV)
     '''
-    output=rho_stellar(z,mode='derivative',**kwargs)\
-    *kwargs['F_STAR']*COSMO.Ob(0.)/COSMO.Om(0.)*MSOL/MP\
-    *(1.-.75*YP)*stellar_spectrum(E_uv,pop='II',**kwargs)/YR/1e9\
-    *kwargs['N_ION_POPII']#convert from per Gyr to
-    if kwargs['POPIII'] and kwargs['FS']>0.:
-        output=output+rho_bh_runge_kutta(z,quantity='seed',dt=True,**kwargs)\
-        /kwargs['FS']*kwargs['F_STAR']*COSMO.Ob(0.)/COSMO.Om(0.)*MSOL/MP\
-        *(1.-.75*YP)\
-        *kwargs['N_ION_POPIII']\
-        *stellar_spectrum(E_uv,pop='III',**kwargs)/YR/1e9
-    #pwer second
+    output=rho_stellar(z,pop=pop,mode='derivative',**kwargs)\
+    *kwargs['F_STAR_POP'+pop]*COSMO.Ob(0.)/COSMO.Om(0.)*MSOL/MP\
+    *(1.-.75*YP)*stellar_spectrum(E_uv,pop=pop,**kwargs)/YR/1e9\
+    *kwargs['N_ION_POP'+pop]#convert from per Gyr to
     if mode=='energy':
         output=output*E_uv
     return output
 
-def emissivity_xrays_stars(z,E_x,obscured=True,**kwargs):
+def emissivity_xrays_stars(z,E_x,pop,obscured=True,**kwargs):
     '''
     X-ray emissivity for stellar mass black holes in XRB at redshift z
     in (keV)/sec/keV/(h/Mpc)^3
 
     use 3e39 erg/sec *f_X*(msolar/yr)^-1 X-ray emissivit (see mesinger 2011).
     '''
-    if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN_STARS']:
-        output=rho_stellar(z,mode='derivative',**kwargs)/1e9\
-        *kwargs['F_STAR']*COSMO.Ob(0.)/COSMO.Om(0.)\
-        *kwargs['FX_STARS']*ERG*3e39*1e9/LITTLEH\
-        *xray_integral_norm(kwargs['ALPHA_X_STARS'],0.5,8)
+    if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN_POP'+pop]:
+        output=rho_stellar(z,pop=pop,mode='derivative',**kwargs)/1e9\
+        *kwargs['F_STAR_POP'+pop]*COSMO.Ob(0.)/COSMO.Om(0.)\
+        *kwargs['FX_POP'+pop]*ERG*3e39*1e9/LITTLEH\
+        *xray_integral_norm(kwargs['ALPHA_X_POP'+pop],0.5,8)
         if obscured:
-            output=output*np.exp(-10.**kwargs['LOG10_N_STARS']*(F_H*sigma_HLike(E_x)\
-            +F_HE/F_H*sigma_HeI(E_x)))
+            output=output*np.exp(-10.**kwargs['LOG10_N_POP'+pop]\
+            *(F_H*sigma_HLike(E_x)+F_HE/F_H*sigma_HeI(E_x)))
         return output
     else:
         return 0.
@@ -346,23 +346,18 @@ def ndot_uv(z,E_low=13.6,E_high=np.infty,**kwargs):
     return (emissivity_uv(z,E_low,**kwargs)\
     -emissivity_uv(z,E_high,**kwargs))/(kwargs['ALPHA_O2'])
 
-def ndot_uv_stars(z,**kwargs):
+def ndot_uv_stars(z,pop,**kwargs):
     '''
-    number of ionizing photons per second per (h/Mpc)^3
+    number of ionizing photons per Gyr per (h/Mpc)^3
     emitted at redshift z
     Args:
         z, redshift
         kwargs, model parameters
     '''
-    return kwargs['N_ION_POPII']*kwargs['F_STAR']*kwargs['F_ESC_STARS']\
-    *rho_stellar(z,mode='derivative',**kwargs)\
-    *MSOL/MP/LITTLEH/1e9/YR*(1.-.75*YP)
-    if kwargs['POPIII'] and kwargs['FS']>0.:
-        output=output+kwargs['N_ION_POPIII']*kwargs['F_STAR']*kwargs['F_ESC']\
-        *rho_bh_runge_kutta(z,quantity='seed',dt=True)/kwargs['FS']\
-        *MSOL/MP/LITTLEH/1e9/YR*(1.-.75*YP)
-    #return kwargs['ZETA_ION']*rho_stellar(z,mode='derivative',**kwargs)\
-    #*MSOL/MP/LITTLEH/1e9/YR*(1.-.75*YP)
+    return kwargs['N_ION_POP'+pop]*kwargs['F_STAR_POP'+pop]\
+    *kwargs['F_ESC_POP'+pop]\
+    *rho_stellar(z,pop=pop,mode='derivative',**kwargs)\
+    *MSOL/MP/LITTLEH*(1.-.75*YP)
 
 #******************************************************************************
 #Simulation functions
@@ -381,7 +376,7 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
     tmax=COSMO.age(zlow)
     tmin=COSMO.age(zhigh)
     taxis=np.linspace(tmin,tmax,ntimes)
-    dt=(taxis[1]-taxis[0])*YR*1e9#dt in seconds (convert from Gyr)
+    dt=(taxis[1]-taxis[0])#dt in Gyr
     zaxis=COSMO.age(taxis,inverse=True)
     qvals=np.zeros_like(taxis)
     qvals_He=np.zeros_like(qvals)
@@ -389,28 +384,70 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
     chi=YP/4./(1.-YP)
     #define integrand for helium ionization
     #define integrand for hydrogen ionization
-    for tnum in range(1,len(qvals)):
-        dz=-zaxis[tnum]+zaxis[tnum-1]
-        tval,zval=taxis[tnum-1],zaxis[tnum-1]
-        trec_inv=alpha_A(T4)*NH0_CM*(1.+chi)*(1.+zval)**3.\
-        *clumping_factor(zval)
-        trec_He_inv=alpha_A(T4)*NH0_CM*(1.+2.*chi)*(1.+zval)**3.\
-        *clumping_factor(zval)
+    def qdot(t,q):
+        '''
+        ionizations per Gyr
+        '''
+        zval=COSMO.age(t,inverse=True)
+
+        zeta_popii=kwargs['F_ESC_POPII']*kwargs['F_STAR_POPII']\
+        *kwargs['N_ION_POPII']\
+        *4./(4.-3.*YP)
+        zeta_popiii=kwargs['F_ESC_POPIII']*kwargs['F_STAR_POPIII']\
+        *kwargs['N_ION_POPIII']\
+        *4./(4.-3.*YP)
+
+        rec_term=q*clumping_factor(COSMO.age(t,inverse=True))*alpha_A(T4)\
+        *NH0_CM*(1+chi)*(1.+zval)**3.*1e9*YR
+
+        dq=zeta_popii*rho_stellar(zval,pop='II',mode='derivative',
+        fractional=True,**kwargs)\
+        +zeta_popiii*rho_stellar(zval,pop='III',mode='derivative',
+        fractional=True,**kwargs)\
+        -rec_term
+        return dq
+    integrator=integrate.ode(qdot)
+    integrator.set_initial_value(0.,taxis[0])
+    tnum=1
+    qvals=np.zeros(len(taxis))
+    tau_vals=np.zeros(len(taxis))
+    while integrator.successful and tnum<len(taxis):
+        integrator.integrate(integrator.t+dt)
+        qvals[tnum]=integrator.y[0]
+        tnum+=1
+    #now compute tau
+    qvals[qvals>1.]=1.
+    qspline=interp.interp1d(np.append(taxis,2*taxis[-1]),
+    np.append(qvals,1.))
+    print(qspline(taxis[-1]))
+    def tau_integrand(t,tau):
+        zval=COSMO.age(t,inverse=True)
+        return DH*1e3*KPC*1e2*NH0_CM*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
+        qspline(t)*(1.+chi)*(-TH/COSMO.Ez(zval))**-1.
+    tnum=1
+    integrator=integrate.ode(tau_integrand)
+    integrator.set_initial_value(0.,taxis[0])
+    while integrator.successful and tnum<len(taxis):
+        integrator.integrate(integrator.t+dt)
+        tau_vals[tnum]=integrator.y[0]
+        tnum+=1
+        '''
         dq=-qvals[tnum-1]*trec_inv*dt
         dq_He=-qvals_He[tnum-1]*trec_He_inv*dt
         if zval>=kwargs['ZMIN'] and zval<=kwargs['ZMAX']:
             dq=dq+ndot_uv(zval,E_low=13.6,E_high=4.*13.6,**kwargs)/NH0*dt
             dq_He=dq_He+ndot_uv(zval,E_low=13.6*4.,E_high=np.inf,**kwargs)/NHE0
-        if zval>=kwargs['ZMIN_STARS'] and zval<=kwargs['ZMAX']:
+        if zval>=kwargs['ZMIN_POPII'] and zval<=kwargs['ZMAX']:
             dq=dq+ndot_uv_stars(zval,**kwargs)/NH0*dt
         dtau=DH*1e3*KPC*1e2*NH0_CM*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
         (qvals[tnum-1]*(1.+chi)+qvals_He[tnum-1]*chi)*dz
         tau_vals[tnum]=tau_vals[tnum-1]+dtau
         qvals[tnum]=qvals[tnum-1]+dq
         qvals_He[tnum]=qvals_He[tnum-1]+dq_He
+        '''
     return taxis,zaxis,qvals,tau_vals
 
-def Jalpha_summand(n,z,mode='agn',**kwargs):
+def Jalpha_summand(n,z,mode='agn',pop=None,**kwargs):
     if mode=='agn':
         return integrate.quad(lambda x:
         emissivity_uv(x,e_ly_n(n)*(1.+x)/(1.+z),mode='number',
@@ -418,7 +455,7 @@ def Jalpha_summand(n,z,mode='agn',**kwargs):
     elif mode=='stars':
         return integrate.quad(lambda x:
         emissivity_lyalpha_stars(x,e_ly_n(n)*(1.+x)/(1.+z),
-        mode='number',**kwargs)/COSMO.Ez(x),z,zmax(z,n))[0]*pn_alpha(n)
+        mode='number',pop=pop,**kwargs)/COSMO.Ez(x),z,zmax(z,n))[0]*pn_alpha(n)
 
 
 def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
@@ -493,16 +530,19 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
                 (delayed(Jalpha_summand)(n,zaxis[tnum],**kwargs)\
                  for n in range(2,31))).sum()
                 if verbose: print('Computing Stars Ly-Alpha')
-                Jalphas_stars[tnum]\
-                =np.array(Parallel(n_jobs=kwargs['NPARALLEL'])
-                (delayed(Jalpha_summand)(n,zaxis[tnum],mode='stars',**kwargs)\
-                 for n in range(2,31))).sum()
+                for pop in ['II','III']:
+                    Jalphas_stars[tnum]\
+                    =np.array(Parallel(n_jobs=kwargs['NPARALLEL'])
+                    (delayed(Jalpha_summand)(n,zaxis[tnum],mode='stars',
+                    pop=pop,**kwargs) for n in range(2,31))).sum()
             else:
                 for n in range(2,31):
                     Jalphas[tnum]=Jalphas[tnum]+Jalpha_summand(n,
                     zaxis[tnum],**kwargs)
-                    Jalphas_stars[tnum]=Jalphas_stars[tnum]+Jalpha_summand(n,
-                    zaxis[tnum],mode='stars',**kwargs)
+                    for pop in ['II','III']:
+                        Jalphas_stars[tnum]=Jalphas_stars[tnum]\
+                        +Jalpha_summand(n,zaxis[tnum],mode='stars',
+                        pop=pop,**kwargs)
             #kwargs['ALPHA_FACTOR']\
             Jalphas[tnum]=1.\
             *Jalphas[tnum]*DH/aval**2./4./PI\
@@ -519,7 +559,8 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
             #subtract emissivity since dz is negative
             jxs=(jxs*aval**3.\
             -(emissivity_xrays(zval,xrays,**kwargs)+
-              emissivity_xrays_stars(zval,xrays,**kwargs))\
+              emissivity_xrays_stars(zval,xrays,pop='II',**kwargs)+\
+              emissivity_xrays_stars(zval,xrays,pop='III',**kwargs))\
             *DH/4./PI*aval/COSMO.Ez(zval)\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.*dz)\
             *np.exp(-dtaus)/aaxis[tnum]**3.
@@ -609,7 +650,6 @@ class GlobalSignal():
         self.param_vals['NPARALLEL']=self.config['NPARALLEL']
         self.param_vals['MASSLIMUNITS']=self.config['MASSLIMUNITS']
         self.param_vals['FEEDBACK']=self.config['FEEDBACK']
-        self.param_vals['POPIII']=self.config['POPIII']
         self.param_history=[]#list of parameters for each calculation
         self.global_signals={}#list of global signals to store
     def set(self,key,value):

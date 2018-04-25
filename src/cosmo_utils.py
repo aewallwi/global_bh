@@ -91,17 +91,20 @@ def tvir2mvir(t,z,mu=1.22):
     Returns:
         dark-matter halo mass corresponding to virial temperature tvir in Msol/h
     '''
+    #print(t)
+    #print(tvir(1e8,z,mu))
+    #print(tvir(1e8,z,mu)/t)
     return 1e8*(t/tvir(1e8,z,mu))**(3./2.)
 
-def stellar_spectrum(E_uv_in,**kwargs):
+def stellar_spectrum(E_uv_in,pop='II',**kwargs):
     E_uv=E_uv_in/(.75*1e3*E_HI_ION)#Units of ly-alpha energy
-    splkey=('stellar_spectrum',kwargs['POP'])
+    splkey=('stellar_spectrum',pop)
     if not splkey in SPLINE_DICT:
         stellar_data=np.loadtxt(DIRNAME+'/../tables/stellar_spectra.dat')
-        SPLINE_DICT[('stellar_spectrum','II')]=\
+        SPLINE_DICT[('stellar_spectrum',pop)]=\
         np.vstack([stellar_data[:,0],
         stellar_data[:,1],stellar_data[:,2]]).T
-        SPLINE_DICT[('stellar_spectrum','III')]=\
+        SPLINE_DICT[('stellar_spectrum',pop)]=\
         np.vstack([stellar_data[:,0],
         stellar_data[:,3],stellar_data[:,4]]).T
     #Figure out the order of the transition.
@@ -402,7 +405,7 @@ def ion_sum(ex,xe):
 def alpha_B(T4):
     '''
     Case-B recombination coefficient
-    for ionized gas at T4x10^4K
+    for neutral gas at T4x10^4K
     Returns cm^3, sec^-1. Applies to situation
     where photon is not re-absorbed by nearby Hydrogen
     '''
@@ -411,7 +414,7 @@ def alpha_B(T4):
 def alpha_A(T4):
     '''
     Case-A recombination coefficient
-    for neutral gas at T4x10^4K
+    for ionized gas at T4x10^4K
     Returns cm^3, sec^-1. Applies to situation
     where photon is re-absorbed by nearby Hydrogen
     '''
