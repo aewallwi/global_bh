@@ -13,7 +13,7 @@ from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
 import scipy.interpolate as interp
 from settings import LY_N_ALPHA_SWITCH
-
+from settings import NSPEC_MAX
 
 #*********************************************************
 #utility functions
@@ -97,16 +97,20 @@ def tvir2mvir(t,z,mu=1.22):
     return 1e8*(t/tvir(1e8,z,mu))**(3./2.)
 
 def stellar_spectrum(E_uv_in,pop='II',**kwargs):
+    #number of photons emitted (as fraction of ionizing)
+    #per energy E_uv
     E_uv=E_uv_in/(.75*1e3*E_HI_ION)#Units of ly-alpha energy
     splkey=('stellar_spectrum',pop)
     if not splkey in SPLINE_DICT:
         stellar_data=np.loadtxt(DIRNAME+'/../tables/stellar_spectra.dat')
-        SPLINE_DICT[('stellar_spectrum',pop)]=\
-        np.vstack([stellar_data[:,0],
-        stellar_data[:,1],stellar_data[:,2]]).T
-        SPLINE_DICT[('stellar_spectrum',pop)]=\
-        np.vstack([stellar_data[:,0],
-        stellar_data[:,3],stellar_data[:,4]]).T
+        if pop=='II':
+            SPLINE_DICT[('stellar_spectrum',pop)]=\
+            np.vstack([stellar_data[:,0],
+            stellar_data[:,1],stellar_data[:,2]]).T
+        elif pop=='III':
+            SPLINE_DICT[('stellar_spectrum',pop)]=\
+            np.vstack([stellar_data[:,0],
+            stellar_data[:,3],stellar_data[:,4]]).T
     #Figure out the order of the transition.
     nval=np.floor(1./np.sqrt(1.-E_uv*.75)).astype(int)
     #print nval
@@ -114,22 +118,25 @@ def stellar_spectrum(E_uv_in,pop='II',**kwargs):
     E_np=4.*(1.-1./(nval+1)**2.)/3.
     #print SPLINE_DICT[splkey]
     if isinstance(E_uv,float):
-        if nval<2 or nval>22:
+        if nval<2 or nval>=NSPEC_MAX:
             return 0.
         else:
+            #print(nval)
+            #print(SPLINE_DICT[splkey].shape)
             norm_factor=SPLINE_DICT[splkey][nval-2,1]
             alpha=SPLINE_DICT[splkey][nval-2,2]
             output=norm_factor*(1.+alpha)\
             /(E_np**(1.+alpha)-E_n**(1.+alpha))*E_uv**alpha
     else:
         output=np.zeros_like(E_uv)
-        select=np.logical_and(nval>=2,nval<=22)
+        select=np.logical_and(nval>=2,nval<=NSPEC_MAX)
         norm_factor=SPLINE_DICT[splkey][nval[select]-2,1]
         alpha=SPLINE_DICT[splkey][nval[select]-2,2]
         output[select]=norm_factor*(1.+alpha)\
         /(E_np[select]**(1.+alpha)-E_n[select]**(1.+alpha))*E_uv**alpha
     #convert from 1/Ly-alpha energy to 1/energy (eV)
-    return output/(E_HI_ION*1e3*.75)
+    return output/(E_HI_ION*1e3*.75)#fraction of ionization photon Number
+                                    #per lyman-alpha energy
 
 
 
@@ -423,8 +430,11 @@ def alpha_A(T4):
 def clumping_factor(z):
     '''
     Clumping factor at redshift z
+    Madau 2017
     '''
     return 2.9*((1.+z)/6.)**(-1.1)
+    #return 27.466*np.exp(-0.114*z+0.001328*z*z)
+
 
 
 def kappa_10_HH(tk):
@@ -531,8 +541,8 @@ def x_coll(tk,xe,z):
         xe, ionization fraction of Hydrogen and Helium I
         z, redshift
     '''
-    return 0.0628/TCMB0*(1.+z)/A10*(kappa_10_HH(tk)*(1.-xe)\
-    +xe*(kappa_10_eH(tk)+kappa_10_pH(tk)))*NH0_CM
+    return 0.0628/TCMB0/(1.+z)/A10*(kappa_10_HH(tk)*(1.-xe)\
+    +xe*(kappa_10_eH(tk)+kappa_10_pH(tk)))*NH0_CM*(1.+z)**3.
 
 
 
@@ -543,7 +553,7 @@ def tau_GP(z,xe):
         z=redshift
         xe=ionization fraction
     '''
-    return 1.34288e-7/COSMO.Hz(z)*(1.-xe)*NH0_CM*(1.+z)**3.
+    return 1.342881e-7/COSMO.Hz(z)*(1.-xe)*NH0_CM*(1.+z)**3.
 
 def s_alpha_tilde(tk,ts,z,xe):
     '''
@@ -557,7 +567,7 @@ def s_alpha_tilde(tk,ts,z,xe):
     taugp=tau_GP(z,xe)
     xi=(1e-7*taugp/tk/tk)**(1./3.)
     return (1.0-0.0631789/tk+0.115995/tk/tk\
-    -0.401403/ts/tk+0.33643/ts/tk/tk)\
+    -0.401403/ts/tk+0.336463/ts/tk/tk)\
     /(1.+2.98394*xi+1.53583*xi*xi+3.85289*xi*xi*xi)
 
 def s_alpha(tk,ts,z,xe):
@@ -584,7 +594,7 @@ def xalpha_over_jalpha(tk,ts,z,xe):
         tk, kinetic temperature (kelvin)
         ts, spin temperature (kelvin)
         z, redshift
-        xe, ionization fraction
+        xe, ioniszation fraction
     '''
     return s_alpha_tilde(tk,ts,z,xe)*1.66e11/(1.+z)
 
@@ -617,7 +627,7 @@ def e_ly_n(n):
     '''
     return E_HI_ION*1e3*(1.-n**-2.)
 
-def tspin(xc,xa,tk,tc,tcmb):
+def tspin(xc,ja,tk,trad,z,xe):
     '''
     spin temperature from couplign constants
     Args:
@@ -626,12 +636,25 @@ def tspin(xc,xa,tk,tc,tcmb):
         tk, kinetic temperature
         tc, ly-alpha color temperature
         tcmb, cmb temperature
+        trad, additional radio background.
     '''
     #Only do this if there is a ly-alpha background
-    if xa>0.:
-        return (xc+xa+1)/(xc/tk+xa/tc+1./tcmb)
+    tcmb=TCMB0*(1.+z)
+    if ja>1e-20:
+        ts=tcmb+trad
+        ts_old=0.
+        ta=tc_eff(tk,ts)#+tcmb
+        xa=xalpha_over_jalpha(tk,ts,z,xe)*ja
+        while(np.abs(ts-ts_old)/ts>1e-3):
+            ts_old=ts
+            xa=xalpha_over_jalpha(tk,ts,z,xe)*ja
+            ta=tc_eff(tk,ts)#+tcmb
+            ts=(1.+xa+xc)/(1./(trad+tcmb)+xa/ta+xc/tk)
     else:
-        return (xc+1)/(xc/tk+1./tcmb)
+        ts=(xc+1)/(xc/tk+1./(trad+tcmb))
+        xa=0.
+        ta=tcmb
+    return ts,ta,xa
 
 
 def tc_eff(tk,ts):
