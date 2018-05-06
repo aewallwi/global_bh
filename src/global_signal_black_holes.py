@@ -41,7 +41,8 @@ def rho_bh_seeds_z(z,**kwargs):
     else:
         limlow=np.log10(kwargs['MMIN_HALO'])
         limhigh=np.log10(kwargs['MMAX_HALO'])
-    return integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
+    output=integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
+    return output
 
 def rho_stellar(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs):
     '''
@@ -61,7 +62,7 @@ def rho_stellar(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs)
         else:
             for znum,zval in enumerate(zaxis):
                 rho_halos[znum]=rho_stellar_z(zval,pop,**kwargs)
-        rho_halos[rho_halos<=0.]=1e-10
+        rho_halos[rho_halos<=1e-20]=1e-20
         SPLINE_DICT[splkey+('integral','stellar')]\
         =interp.UnivariateSpline(taxis,np.log(rho_halos))
         SPLINE_DICT[splkey+('derivative','stellar')]\
@@ -77,14 +78,14 @@ def rho_stellar(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs)
     return output
 
 
-def rho_bh_runge_kutta(z,quantity='accreting',dt=False,verbose=False,**kwargs):
+def rho_bh_runge_kutta(z,quantity='accreting',verbose=False,**kwargs):
     splkey=('rho_bh','rk')+dict2tuple(kwargs)
     if not splkey in SPLINE_DICT:
         if verbose: print('Growing Black Holes')
-        taxis=np.linspace(COSMO.age(kwargs['ZMAX']+.5),
-        COSMO.age(kwargs['ZMIN']-.5),kwargs['NTIMES'])
-        taxis_seeds=np.linspace(COSMO.age(kwargs['ZMAX']+.75),
-        COSMO.age(kwargs['ZMIN']-.75),kwargs['NTIMES'])
+        taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
+        1.1*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
+        taxis_seeds=np.linspace(.8*COSMO.age(kwargs['ZMAX']),
+        1.2*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
         zaxis=COSMO.age(taxis,inverse=True)
         zaxis_seeds=COSMO.age(taxis_seeds,inverse=True)
         #compute density of halos in mass range
@@ -100,8 +101,6 @@ def rho_bh_runge_kutta(z,quantity='accreting',dt=False,verbose=False,**kwargs):
         else:
             for znum,zval in enumerate(zaxis_seeds):
                 rho_seeds[znum]=rho_bh_seeds_z(zval,**kwargs)
-        post_seed=zaxis_seeds<kwargs['Z_SEED_MIN']
-        rho_seeds[post_seed]=rho_seeds[post_seed].min()
         seed_spline=interp.UnivariateSpline(taxis_seeds,rho_seeds,ext=2)
         #define black hole integrand
         rho_bh_accreting[0]=0.
@@ -111,7 +110,7 @@ def rho_bh_runge_kutta(z,quantity='accreting',dt=False,verbose=False,**kwargs):
             def bh_accreting_integrand(t,y):
                 output=y/kwargs['TAU_GROW']
                 if t<=t_seed_max:
-                    output=ofndutput+seed_spline.derivative()(t)
+                    output=output+seed_spline.derivative()(t)
                 return output
             def bh_quiescent_integrand(t,rho_bh):
                 return 0.
@@ -162,11 +161,8 @@ def rho_bh_runge_kutta(z,quantity='accreting',dt=False,verbose=False,**kwargs):
         =interp.UnivariateSpline(taxis,
         SPLINE_DICT[splkey]['accreting'](taxis)
         +SPLINE_DICT[splkey]['quiescent'](taxis),ext=2)
-    if not dt:
-        output=SPLINE_DICT[splkey][quantity](COSMO.age(z))
-    else:
-        output=SPLINE_DICT[splkey][quantity].derivative()(COSMO.age(z))
-    return output
+    return SPLINE_DICT[splkey][quantity](COSMO.age(z))
+
 
 
 def xray_integral_norm(alpha,emin,emax):
@@ -551,7 +547,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
                 if verbose: print('Computing Stars Ly-Alpha')
                 for pop in ['II','III']:
                     Jalphas_stars[tnum]\
-                    =Jalpha_stars[tnum]+np.array(Parallel(n_jobs=kwargs['NPARALLEL'])
+                    =Jalphas_stars[tnum]+np.array(Parallel(n_jobs=kwargs['NPARALLEL'])
                     (delayed(Jalpha_summand)(n,zaxis[tnum],mode='stars',
                     pop=pop,**kwargs) for n in range(2,31))).sum()
             else:
