@@ -631,7 +631,10 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
         *(1./10./aaxis[tnum])**.5
     output={'T':taxis,'Z':zaxis,'Tk':Tks,'Xe':xes,'Q':q_ion,'Trad':Trads,
     'Ts':Tspins,'Tb':tb,'Xalpha':xalphas,'Tc':Talphas,
-    'Jalpha':Jalphas,'Xcoll':xcolls,'Jalpha*':Jalphas_stars}
+    'Jalpha':Jalphas,'Xcoll':xcolls,'Jalpha*':Jalphas_stars,'Talpha':Talphas,
+    'rho_bh_a':rho_bh_runge_kutta(zaxis,quantity='accreting',**kwargs),
+    'rho_bh_q':rho_bh_runge_kutta(zaxis,quantity='quiescent',**kwargs),
+    'rho_bh_s':rho_bh_runge_kutta(zaxis,quantity='seed',**kwargs)}
     if diagnostic:
         output['jxs']=np.array(jx_matrix)
         output['xrays']=np.array(xray_matrix)
@@ -697,4 +700,4 @@ class GlobalSignal():
     def calculate_global(self):
         self.global_signals[dict2tuple(self.param_vals)]=delta_Tb(\
         zlow=self.config['ZLOW'],zhigh=self.config['ZHIGH'],
-        ntimes=self.param_vals['NTIMESGLOBAL'],**self.param_vals)
+        ntimes=self.param_vals['NTIMESGLOBAL'],**self.param_vals,diagnostic=True)
