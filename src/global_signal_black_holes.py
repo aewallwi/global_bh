@@ -52,7 +52,8 @@ def rho_stellar(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs)
     splkey=('rho','coll',pop)+dict2tuple(kwargs)
     if not splkey+('integral','stellar') in SPLINE_DICT:
         if verbose: print('Calculating Collapsed Fraction')
-        taxis=np.linspace(COSMO.age(kwargs['ZMAX']+.5),
+        taxmin=np.max([COSMO.age(kwargs['ZMAX']+.5)-kwargs['TAU_DELAY_POP'+pop],.0015])
+        taxis=np.linspace(taxmin,
         COSMO.age(kwargs['ZMIN_POP'+pop]-.5),kwargs['NTIMES'])
         zaxis=COSMO.age(taxis,inverse=True)
         rho_halos=np.zeros_like(zaxis)
@@ -64,13 +65,13 @@ def rho_stellar(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs)
                 rho_halos[znum]=rho_stellar_z(zval,pop,**kwargs)
         rho_halos[rho_halos<=1e-20]=1e-20
         SPLINE_DICT[splkey+('integral','stellar')]\
-        =interp.UnivariateSpline(taxis,np.log(rho_halos))
+        =interp.UnivariateSpline(taxis,np.log(rho_halos),ext=3)
         SPLINE_DICT[splkey+('derivative','stellar')]\
-        =interp.UnivariateSpline(taxis,np.log(rho_halos)).derivative()
+        =interp.UnivariateSpline(taxis,np.log(rho_halos),ext=3).derivative()
     if mode=='integral':
-        output=np.exp(SPLINE_DICT[splkey+(mode,'stellar')](COSMO.age(z)))
+        output=np.exp(SPLINE_DICT[splkey+(mode,'stellar')](COSMO.age(z)-kwargs['TAU_DELAY_POP'+pop]))
     else:
-        output=SPLINE_DICT[splkey+(mode,'stellar')](COSMO.age(z))\
+        output=SPLINE_DICT[splkey+(mode,'stellar')](COSMO.age(z)-kwargs['TAU_DELAY_POP'+pop])\
         *rho_stellar(z,pop=pop,mode='integral',**kwargs)
     if fractional:
         output=output/(COSMO.Om(0.)*COSMO.rho_b(0.)/COSMO.Ob(0.)*(1e3)**3.)
@@ -82,9 +83,12 @@ def rho_bh_runge_kutta(z,quantity='accreting',verbose=False,**kwargs):
     splkey=('rho_bh','rk')+dict2tuple(kwargs)
     if not splkey in SPLINE_DICT:
         if verbose: print('Growing Black Holes')
-        taxis=np.linspace(.9*COSMO.age(kwargs['ZMAX']),
+        taxmin=np.max([.9*COSMO.age(kwargs['ZMAX'])-kwargs['TAU_DELAY'],.0015])
+        taxis=np.linspace(taxmin,
         1.1*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
-        taxis_seeds=np.linspace(.8*COSMO.age(kwargs['ZMAX']),
+
+        taxmin=np.max([.8*COSMO.age(kwargs['ZMAX'])-kwargs['TAU_DELAY'],.0015])
+        taxis_seeds=np.linspace(taxmin,
         1.2*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
         zaxis=COSMO.age(taxis,inverse=True)
         zaxis_seeds=COSMO.age(taxis_seeds,inverse=True)
@@ -153,15 +157,15 @@ def rho_bh_runge_kutta(z,quantity='accreting',verbose=False,**kwargs):
                 y[tnum]=integrator.y[0]
                 tnum+=1
             #print tnum
-            SPLINE_DICT[splkey][quant]=interp.UnivariateSpline(taxis,y,ext=2)
+            SPLINE_DICT[splkey][quant]=interp.UnivariateSpline(taxis,y,ext=1)
             #print y
         SPLINE_DICT[splkey]['seed']\
-        =interp.UnivariateSpline(taxis,rho_seeds,ext=2)
+        =interp.UnivariateSpline(taxis,rho_seeds,ext=1)
         SPLINE_DICT[splkey]['total']\
         =interp.UnivariateSpline(taxis,
         SPLINE_DICT[splkey]['accreting'](taxis)
-        +SPLINE_DICT[splkey]['quiescent'](taxis),ext=2)
-    return SPLINE_DICT[splkey][quantity](COSMO.age(z))
+        +SPLINE_DICT[splkey]['quiescent'](taxis),ext=1)
+    return SPLINE_DICT[splkey][quantity](COSMO.age(z)-kwargs['TAU_DELAY'])
 
 
 
@@ -185,7 +189,8 @@ def emissivity_radio(z,freq,**kwargs):
         return 3.8e23\
         *(log_normal_moment(kwargs['R_MEAN'],kwargs['R_STD'],1.)/1.6e4)\
         *(kwargs['FLOUD']/.1)\
-        *(kwargs['GBOL']/.03)\
+        *(kwargs['GBOL']/.003)\
+        *(.045/kwargs['TAU_GROW'])\
         *(xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)\
         *2.**(0.9-kwargs['ALPHA_X'])\
         *(2.48e-3)**(1.6-kwargs['ALPHA_OX'])\
@@ -208,7 +213,8 @@ def emissivity_xrays(z,E_x,obscured=True,**kwargs):
     if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN']:
         output=2.5e49*((1.+kwargs['FLOUD']\
         *log_normal_moment(kwargs['R_MEAN'],kwargs['R_STD'],1./6.)/1.3))\
-        *(kwargs['GBOL']/.03)*(xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)\
+        *(.045/kwargs['TAU_GROW'])\
+        *(kwargs['GBOL']/.003)*(xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)\
         *(rho_bh_runge_kutta(z,**kwargs)/1e4)*(E_x)**(-kwargs['ALPHA_X'])\
         *np.exp(-E_x/300.)
         #output=2.322e48*(kwargs['FX']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
@@ -236,7 +242,8 @@ def emissivity_uv(z,E_uv,mode='energy',obscured=True,**kwargs):
         #output=3.5e3*emissivity_xrays(z,2.,obscured=False,**kwargs)*(2500./912.)**(-.61)\
         #*(E_uv/13.6)**(-0.61*np.imag(power_select)-1.71*(np.real(power_select)))
         #add stellar contribution
-        output=7.8e52*(kwargs['GBOL']/.03)\
+        output=7.8e52*(kwargs['GBOL']/.003)\
+        *(.045/kwargs['TAU_GROW'])\
         *(xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)\
         *(rho_bh_runge_kutta(z,**kwargs)/1e4)\
         *2.**(.9-kwargs['ALPHA_X'])\

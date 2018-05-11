@@ -2,7 +2,7 @@ CONFIG:
   MULTIPROCESS: False
   NPARALLEL: 2
   ZLOW: 7.
-  ZHIGH: 100.
+  ZHIGH: 70.
   FEEDBACK: True
   NTIMESGLOBAL: 100
   MASSLIMUNITS: KELVIN
@@ -14,7 +14,10 @@ PARAMS:
     P0: 400
   ZMAX:
     TYPE: FIXED
-    P0: 120.
+    P0: 80.
+  TAU_DELAY:
+    TYPE: FIXED
+    P0: 0.01
   #Population II parameters
   ZMIN_POPII:
     TYPE: FIXED
@@ -25,6 +28,9 @@ PARAMS:
   N_ION_POPII:
     TYPE: FIXED
     P0: 4400.
+  TAU_DELAY_POPII:
+    TYPE: FIXED
+    P0: 0.01
   ALPHA_X_POPII:
     TYPE: FIXED
     P0: 1.5
@@ -62,12 +68,15 @@ PARAMS:
   F_ESC_POPIII:
     TYPE: FIXED
     P0: 0.1
+  TAU_DELAY_POPIII:
+    TYPE: FIXED
+    P0: 0.01
   N_ION_POPIII:
     TYPE: FIXED
     P0: 30000.
   TMIN_POPIII:
     TYPE: FIXED
-    P0: 2000.
+    P0: 8000.
   TMAX_POPIII:
     TYPE: FIXED
     P0: 10000.
@@ -80,7 +89,7 @@ PARAMS:
     P0: 10.
   TAU_GROW:
     TYPE: FIXED
-    P0: 0.045
+    P0: 0.1
   TAU_FEEDBACK:
     TYPE: FIXED
     P0: 0.1
@@ -96,7 +105,7 @@ PARAMS:
   #X-ray parameters
   GBOL: #fraction of Eddington between 2-10 keV
     TYPE: FIXED
-    P0: 0.03
+    P0: 0.003
   ALPHA_X: #X-ray spectral index
     TYPE: FIXED
     P0: 0.9
