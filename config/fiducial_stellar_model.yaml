@@ -30,7 +30,7 @@ PARAMS:
     P0: 4400.
   TAU_DELAY_POPII:
     TYPE: FIXED
-    P0: 0.01
+    P0: 0.0
   ALPHA_X_POPII:
     TYPE: FIXED
     P0: 1.5
@@ -45,7 +45,7 @@ PARAMS:
     P0: 0.1
   TMIN_POPII:
     TYPE: FIXED
-    P0: 10000.
+    P0: 50000.
   TMAX_POPII:
     TYPE: FIXED
     P0: 10000000000000.
@@ -70,7 +70,7 @@ PARAMS:
     P0: 0.1
   TAU_DELAY_POPIII:
     TYPE: FIXED
-    P0: 0.01
+    P0: 0.00
   N_ION_POPIII:
     TYPE: FIXED
     P0: 30000.
