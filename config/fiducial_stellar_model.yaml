@@ -48,7 +48,7 @@ PARAMS:
     P0: 50000.
   TMAX_POPII:
     TYPE: FIXED
-    P0: 10000000000000.
+    P0: 1000000000.
   #Population III parameters
   ZMIN_POPIII:
     TYPE: FIXED

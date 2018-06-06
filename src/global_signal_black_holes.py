@@ -79,6 +79,10 @@ def rho_stellar(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs)
     return output
 
 
+def rho_bh_ps_analytic(z,quantity='accreting',verbose=False,**kwargs):
+
+
+
 def rho_bh_runge_kutta(z,quantity='accreting',verbose=False,**kwargs):
     splkey=('rho_bh','rk')+dict2tuple(kwargs)
     if not splkey in SPLINE_DICT:

@@ -14,7 +14,10 @@ from settings import SPLINE_DICT
 import scipy.interpolate as interp
 from settings import LY_N_ALPHA_SWITCH
 from settings import NSPEC_MAX
-
+import scipy.special as sp
+#import pyccl as ccl
+#COSMO_CCL = ccl.Cosmology(Omega_c=0.27, Omega_b=0.045, h=0.67,
+#A_s=2.1e-9, n_s=0.96, Omega_k=0.)
 #*********************************************************
 #utility functions
 #*********************************************************
@@ -51,10 +54,53 @@ def massfunc(m,z,model='tinker08',mdef='200m'):
     '''
     return mass_function.massFunction(m,z,mdef=mdef,model=model,
     q_out='dndlnM')*np.log(10.)
+    #return ccl.massfunc(COSMO_CCL,m/LITTLEH,1./(1.+z))*LITTLEH**2.
 
 
 def bias(mvir,z,mode='tinker10',mdef='200m'):
     return col_bias.haloBias(mvir, model = 'tinker10', z = z,mdef=mdef)
+
+
+def sigma(m,z):
+    '''
+    sigma for tophat filtered density field at mass m.
+    '''
+    r=(3./4./PI*m/COSMO.rho_m(0.))**(1./3.)/1e3
+    return COSMO.sigma(r,z)
+
+def nu(z,m,d=False):
+    '''
+    delta_crit/sqrt(2.*sigma**2.)
+    '''
+    if not d:
+        return 1.686/COSMO.growthFactor(z)**2./np.sqrt(2.)/sigma(m,z)
+    else:
+        return -2.*1.686/COSMO.growthFactor(z)**3./np.sqrt(2.)/sigma(m,0.)\
+        *COSMO.growthFactor(z,derivative=1)
+
+def rho_collapse_eps(mmin,mmax,z,derivative=False,fractional=False):
+    '''
+    Compute comoving density of collapsed matter of fraction of matter collapsed
+    in halos between mass mmin and mmax at redshift z \
+    from extended press-schechter
+    Args:
+        mmin, minimum halo mass (msolar/h)
+        mmax, maximum halo mass (msolar/h)
+        z, redshift
+        derivative, if true, return derivative with respect to time in Gyr^-1
+        fractional, if true, return fraction of density in halos, if false
+                            return comoving density in halos. 
+    '''
+    if not derivative:
+        output=(sp.erfc(nu(z,mmin))-sp.erfc(z,mmax))
+    else:
+        dzdt=-COSMO.Ez(z)*(1.+z)/TH
+        output=-dzdt*COSMO.rho_m(0.)*1e9*2./np.sqrt(PI)*\
+        (np.exp(-nu(z,mmin)**2.)*nu(z,mmin,d=True)\
+        -np.exp(-nu(z,mmax)**2.)*nu(z,mmax,d=True))
+    if not fractional:
+        output=COSMO.rho_m(0.)*1e9*output
+    return output
 
 def delta(z):
     '''

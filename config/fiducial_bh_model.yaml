@@ -1,22 +1,22 @@
 CONFIG:
   MULTIPROCESS: False
-  NPARALLEL: 12
-  ZLOW: 6.
-  ZHIGH: 120.
+  NPARALLEL: 2
+  ZLOW: 12.
+  ZHIGH: 80.
   FEEDBACK: True
-  NTIMESGLOBAL: 200
+  NTIMESGLOBAL: 100
   MASSLIMUNITS: KELVIN
 PARAMS:
   NTIMES:
     TYPE: FIXED
-    P0: 400
+    P0: 100
   ZMAX:
     TYPE: FIXED
     P0: 120.
   #Population II parameters
   ZMIN_POPII:
     TYPE: FIXED
-    P0: 6.
+    P0: 8.
   F_STAR_POPII:
     TYPE: FIXED
     P0: 0.1
@@ -31,7 +31,7 @@ PARAMS:
     P0: 1.
   LOG10_N_POPII:
     TYPE: FIXED
-    P0: 20.
+    P0: 19.
   F_ESC_POPII:
     TYPE: FIXED
     P0: 0.1
@@ -40,14 +40,14 @@ PARAMS:
     P0: 10000.
   TMAX_POPII:
     TYPE: FIXED
-    P0: 10000000000.
+    P0: 10000000000000.
   #Population III parameters
   ZMIN_POPIII:
     TYPE: FIXED
-    P0: 10.
+    P0: 8.
   F_STAR_POPIII:
     TYPE: FIXED
-    P0: 0.01
+    P0: 0.00000000001
   ALPHA_X_POPIII:
     TYPE: FIXED
     P0: 1.5
@@ -72,7 +72,7 @@ PARAMS:
   #Formation Parameters
   ZMIN:
     TYPE: FIXED
-    P0: 6.
+    P0: 8.
   Z_SEED_MIN:
     TYPE: FIXED
     P0: 10.
@@ -82,6 +82,9 @@ PARAMS:
   TAU_FEEDBACK:
     TYPE: FIXED
     P0: 0.1
+  TAU_FORMATION:
+    TYPE: FIXED
+    P0: 0.01
   TMIN_HALO:
     TYPE: FIXED
     P0: 2000.
