@@ -7,7 +7,7 @@ import scipy.integrate as integrate
 import scipy.interpolate as interpolate
 from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
 from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0,NH0_CM,YP,KPC
-from settings import POP_III_ION,POP_II_ION,DIRNAME
+from settings import POP_III_ION,POP_II_ION,DIRNAME,TH
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
@@ -73,10 +73,19 @@ def nu(z,m,d=False):
     delta_crit/sqrt(2.*sigma**2.)
     '''
     if not d:
-        return 1.686/COSMO.growthFactor(z)**2./np.sqrt(2.)/sigma(m,z)
+        output=1.686/COSMO.growthFactor(z)/np.sqrt(2.)/sigma(m,0.)\
+        *COSMO.Om(z)**0.0055
     else:
-        return -2.*1.686/COSMO.growthFactor(z)**3./np.sqrt(2.)/sigma(m,0.)\
-        *COSMO.growthFactor(z,derivative=1)
+        ai=(1.+z)
+        pnumer=9.*COSMO.Om0*ai**8.+10.*COSMO.Or0*ai**9.\
+        +8.*COSMO.Ok0*ai**7.+6.*COSMO.Ode0*ai**5.
+        pdenom=COSMO.Om0*ai**9.+COSMO.Or0*ai**10.+COSMO.Ok0*ai**8.\
+        +COSMO.Ode0*ai**6.
+        output=-nu(z,m,d=False)*(COSMO.growthFactor(z,derivative=True)\
+        /COSMO.growthFactor(z,derivative=False)+0.0055/2\
+        *pnumer/pdenom)
+    #print('nu=%.2e'%output)
+    return output
 
 def rho_collapse_eps(mmin,mmax,z,derivative=False,fractional=False):
     '''
@@ -89,13 +98,13 @@ def rho_collapse_eps(mmin,mmax,z,derivative=False,fractional=False):
         z, redshift
         derivative, if true, return derivative with respect to time in Gyr^-1
         fractional, if true, return fraction of density in halos, if false
-                            return comoving density in halos. 
+                            return comoving density in halos.
     '''
     if not derivative:
-        output=(sp.erfc(nu(z,mmin))-sp.erfc(z,mmax))
+        output=(sp.erfc(nu(z,mmin))-sp.erfc(nu(z,mmax)))
     else:
         dzdt=-COSMO.Ez(z)*(1.+z)/TH
-        output=-dzdt*COSMO.rho_m(0.)*1e9*2./np.sqrt(PI)*\
+        output=-dzdt*2./np.sqrt(PI)*\
         (np.exp(-nu(z,mmin)**2.)*nu(z,mmin,d=True)\
         -np.exp(-nu(z,mmax)**2.)*nu(z,mmax,d=True))
     if not fractional:
