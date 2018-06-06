@@ -18,14 +18,26 @@ import os
 from settings import DEBUG
 from joblib import Parallel, delayed
 
-def get_m_minmax(z,**kwargs):
+def get_m_minmax(z,mode='BH',**kwargs):
+    if mode=='BH':
+        pf='HALO'
+    elif mode=='POPII':
+        pf='POPII'
+    elif mode=='POPIII':
+        pf='POPIII'
     if kwargs['MASSLIMUNITS']=='KELVIN':
-        mmin=tvir2mvir(kwargs['TMIN_HALO'],z)
-        mmax=tvir2mvir(kwargs['TMAX_HALO'],z)
+        mmin=tvir2mvir(kwargs['TMIN_'+pf],z)
+        mmax=tvir2mvir(kwargs['TMAX_'+pf],z)
     else:
-        mmin=kwargs['MMIN_HALO']
-        mmax=kwargs['MMAX_HALO']
+        mmin=kwargs['MMIN_'+pf]
+        mmax=kwargs['MMAX_'+pf]
     return mmin,mmax
+
+def rho_bh(z,**kwargs):
+    if kwargs['DENSITYMETHOD']=='RUNGEKUTTA':
+        return rho_bh_runge_kutta(z,**kwargs)
+    else:
+        return rho_bh_analytic(z,**kwargs)
 
 def rho_stellar_z(z,pop,**kwargs):
     g=lambda x: massfunc(10.**x,z,model=kwargs['MFMODEL'],
@@ -47,7 +59,20 @@ def rho_bh_seeds_z(z,**kwargs):
     output=integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
     return output
 
-def rho_stellar(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs):
+def rho_stellar_analytic(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs):
+    '''
+    time derivative of collapsed matter density in star forming halos.
+    '''
+    if mode=='derivative':
+        d=True
+    else:
+        d=False
+    mmin,mmax=get_m_minmax(z,mode='POP'+pop,**kwargs)
+    return rho_collapse_eps(mmin,mmax,z,derivative=d,fractional=fractional)
+
+
+
+def rho_stellar_runge_kutta(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs):
     '''
     time-derivative of collapsed matter density in msolar h^2/Mpc^3
     at redshift z for **kwargs model
@@ -80,6 +105,12 @@ def rho_stellar(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs)
         output=output/(COSMO.Om(0.)*COSMO.rho_b(0.)/COSMO.Ob(0.)*(1e3)**3.)
 
     return output
+
+def rho_stellar(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs):
+    if kwargs['DENSITYMETHOD']=='RUNGEKUTTA':
+        return rho_stellar_runge_kutta(z,pop,mode=mode,fractional=fractional,verbose=verbose,**kwargs)
+    elif kwargs['DENSITYMETHOD']=='ANALYTIC':
+        return rho_stellar_analytic(z,pop,mode=mode,fractional=fractional,verbose=verbose,**kwargs)
 
 
 def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
@@ -295,7 +326,7 @@ def emissivity_radio(z,freq,**kwargs):
         *(2.48e-3)**(1.6-kwargs['ALPHA_OX'])\
         *(2.8)**(kwargs['ALPHA_R']-.6)\
         *(4.39)**(-(kwargs['ALPHA_O1']-.61))\
-        *(rho_bh_runge_kutta(z,**kwargs)/1e4)\
+        *(rho_bh(z,**kwargs)/1e4)\
         *(freq/1e9)**(-kwargs['ALPHA_R'])
     else:
         return 0.
@@ -314,7 +345,7 @@ def emissivity_xrays(z,E_x,obscured=True,**kwargs):
         *log_normal_moment(kwargs['R_MEAN'],kwargs['R_STD'],1./6.)/1.3))\
         *(.045/kwargs['TAU_GROW'])\
         *(kwargs['GBOL']/.003)*(xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)\
-        *(rho_bh_runge_kutta(z,**kwargs)/1e4)*(E_x)**(-kwargs['ALPHA_X'])\
+        *(rho_bh(z,**kwargs)/1e4)*(E_x)**(-kwargs['ALPHA_X'])\
         *np.exp(-E_x/300.)
         #output=2.322e48*(kwargs['FX']/2e-2)*E_x**(-kwargs['ALPHA_X'])\
         #*(rho_bh_runge_kutta(z,**kwargs)/1e4)*(1.-kwargs['ALPHA_X'])\
@@ -344,7 +375,7 @@ def emissivity_uv(z,E_uv,mode='energy',obscured=True,**kwargs):
         output=7.8e52*(kwargs['GBOL']/.003)\
         *(.045/kwargs['TAU_GROW'])\
         *(xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)\
-        *(rho_bh_runge_kutta(z,**kwargs)/1e4)\
+        *(rho_bh(z,**kwargs)/1e4)\
         *2.**(.9-kwargs['ALPHA_X'])\
         *(2500./912.)**(0.61-kwargs['ALPHA_O1'])\
         *(2.48e-3)**(1.6-kwargs['ALPHA_OX'])
@@ -738,9 +769,9 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
     output={'T':taxis,'Z':zaxis,'Tk':Tks,'Xe':xes,'Q':q_ion,'Trad':Trads,
     'Ts':Tspins,'Tb':tb,'Xalpha':xalphas,'Tc':Talphas,
     'Jalpha':Jalphas,'Xcoll':xcolls,'Jalpha*':Jalphas_stars,'Talpha':Talphas,
-    'rho_bh_a':rho_bh_runge_kutta(zaxis,quantity='accreting',**kwargs),
-    'rho_bh_q':rho_bh_runge_kutta(zaxis,quantity='quiescent',**kwargs),
-    'rho_bh_s':rho_bh_runge_kutta(zaxis,quantity='seed',**kwargs)}
+    'rho_bh_a':rho_bh(zaxis,quantity='accreting',**kwargs),
+    'rho_bh_q':rho_bh(zaxis,quantity='quiescent',**kwargs),
+    'rho_bh_s':rho_bh(zaxis,quantity='seed',**kwargs)}
     if diagnostic:
         output['jxs']=np.array(jx_matrix)
         output['xrays']=np.array(xray_matrix)
@@ -776,6 +807,7 @@ class GlobalSignal():
         self.param_vals['MFMODEL']=self.config['MFMODEL']
         self.param_vals['MFDEFF']=self.config['MFDEFF']
         self.param_vals['NTIMESGLOBAL']=self.config['NTIMESGLOBAL']
+        self.param_vals['DENSITYMETHOD']=self.config['DENSITYMETHOD']
         self.param_history=[]#list of parameters for each calculation
         self.global_signals={}#list of global signals to store
     def set(self,key,value):
