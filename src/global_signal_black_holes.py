@@ -18,6 +18,15 @@ import os
 from settings import DEBUG
 from joblib import Parallel, delayed
 
+def get_m_minmax(**kwargs):
+    if kwargs['MASSLIMUNITS']=='KELVIN':
+        mmin=cosmo_utils.tvir2mvir(kwargs['TMIN_HALO'],z)
+        mmax=cosmo_utils.tvir2mvir(kwargs['TMAX_HALO'],z)
+    else:
+        mmin=kwargs['MMIN_HALO']
+        mmax=kwargs['MMAX_HALO']
+    return mmin,mmax
+
 def rho_stellar_z(z,pop,**kwargs):
     g=lambda x: massfunc(10.**x,z,model=kwargs['MFMODEL'],
     mdef=kwargs['MFDEFF'])*10.**x
@@ -33,14 +42,8 @@ def rho_stellar_z(z,pop,**kwargs):
 def rho_bh_seeds_z(z,**kwargs):
     g=lambda x: massfunc(10.**x,z,model=kwargs['MFMODEL'],
     mdef=kwargs['MFDEFF'])*10.**x
-    if kwargs['MASSLIMUNITS']=='KELVIN':
-        limlow=np.log10(tvir2mvir(kwargs['TMIN_HALO'],
-        z))
-        limhigh=np.log10(tvir2mvir(kwargs['TMAX_HALO'],
-        z))
-    else:
-        limlow=np.log10(kwargs['MMIN_HALO'])
-        limhigh=np.log10(kwargs['MMAX_HALO'])
+    limlow,limhigh=get_m_mminmax(**kwargs)
+    limlow,limhigh=np.log10(limlow),np.log10(limhigh)
     output=integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
     return output
 
@@ -80,6 +83,84 @@ def rho_stellar(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs)
 
 
 def rho_bh_ps_analytic(z,quantity='accreting',verbose=False,**kwargs):
+    '''
+    Analytic alternative to rho_bh_runge_kutta which relies on interpolation
+    and may introduce significant numerical errors in high-growth rate scenarios
+    Args:
+        z, redshift
+        quantity, specify whether you want accreting or quiescent black holes
+    '''
+    splkey=('rho_bh','analytic')+dict2tuple(kwargs)
+    if not splkey in SPLINE_DICT:
+        #define integrand
+        taxmin=np.max([.9*COSMO.age(kwargs['ZMAX'])-kwargs['TAU_DELAY'],.0015])
+        taxis=np.linspace(taxmin,
+        1.1*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
+        fb_factor=np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_GROW'])
+        t_seed_max=COSMO.age(kwargs['Z_SEED_MIN'])
+
+        #define integrand to compute accreting black hole density
+        def bh_accreting_integrand(t,y):
+            tfb=t-kwargs['TAU_FEEDBACK']
+            z=COSMO.age(t,inverse=True)
+            mmin,mmax=get_m_minmax(**kwargs)
+            output=y/kwargs['TAU_GROW']
+            if tfb<=t_seed_max:
+                output=output\
+                +cosmo_utils.rho_collapse_eps(mmin,mmax,z,
+                derivative=True)*kwargs['FS']
+                if tfb>=taxis[0]:
+                    zfb=COSMO.age(tfb,inverse=True)
+                    output=output-cosmo_utils.rho_collapse_eps(mmin,mmax,zfb,
+                    derivative=True)*fb_factor*kwargs['FS']
+            return output
+        #define integrand to compute quiescent black hole density
+        def bh_quiescent_integrand(t,y):
+            tfb=t-kwargs['TAU_FEEDBACK']
+            zfb=COSMO.age(tfb,inverse=True)
+            mmin,mmax=get_m_minmax(**kwargs)
+            if tfb>taxis[0] and tfb<=t_seed_max:
+                return cosmo_utils.rho_collapse_eps(mmin,mmax,zfb,
+                derivative=True)*fb_factor*kwargs['FS']
+        #Now compute integrals
+        rho_bh_accreting=np.zeros_like(taxis)
+        rho_bh_quiescent=np.zeros_like(taxis)
+        dt=taxis[1]-taxis[0]
+        qlist=['accreting','quiescent']
+        t0list=[taxis[0],taxis[0]+kwargs['TAU_FEEDBACK']]
+        intlist=[bh_accreting_integrand,bh_quiescent_integrand]
+        SPLINE_DICT[splkey]={}
+        for integrand,y,quant,tstart in zip(intlist,ylist,qlist,t0list):
+            integrator=integrate.ode(integrand)
+            integrator.set_initial_value(y[0],tstart)
+            tnum=int((tstart-taxis[0])/dt)+1
+            while integrator.successful and tnum<len(taxis):
+                integrator.integrate(integrator.t+dt)
+                y[tnum]=integrator.y[0]
+                tnum+=1
+            SPLINE_DICT[splkey][quant]=interp.UnivariateSpline(taxis,y,ext=1)
+        #generate seeds spline
+        rho_bh_seeds=np.zeros_like(taxis)
+        for tn,t in enumerate(taxis):
+            mmin,mmax=get_m_minmax(**kwargs)
+            z=COSMO.age(t,inverse=True)
+            rho_bh_seeds[tn]=cosmo_utils.rho_collapse_eps(mmin,mmax,z)\
+            *kwargs['FS']
+        SPLINE_DICT[splkey]['seed']\
+        =interp.UnivariateSpline(taxis,rho_bh_seeds,ext=1)
+        SPLINE_DICT[splkey]['total']\
+        =interp.UnivariateSpline(taxis,SPLINE_DICT[splkey]['accreting'](taxis)\
+        +SPLINE_DICT['quiescent'](taxis),ext=1)
+    return SPLINE_DICT[splkey][quantity](COSMO.age(z)-kwargs['TAU_DELAY'])
+
+
+
+
+
+
+
+
+
 
 
 
