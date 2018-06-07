@@ -100,6 +100,9 @@ def rho_collapse_eps(mmin,mmax,z,derivative=False,fractional=False):
         fractional, if true, return fraction of density in halos, if false
                             return comoving density in halos.
     '''
+    #if mmax>1e20 or mmin>1e20:
+    #    print('mmax=%e'%mmax)
+    #    print('mmin=%e'%mmin)
     if not derivative:
         output=(sp.erfc(nu(z,mmin))-sp.erfc(nu(z,mmax)))
     else:
