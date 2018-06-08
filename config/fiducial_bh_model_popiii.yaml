@@ -21,7 +21,7 @@ PARAMS:
     P0: 0.00
   NTIMES:
     TYPE: FIXED
-    P0: 400
+    P0: 4000
   ZMAX:
     TYPE: FIXED
     P0: 80.
@@ -52,7 +52,7 @@ PARAMS:
     P0: 50000.
   TMAX_POPII:
     TYPE: FIXED
-    P0: 10000000000000.
+    P0: 100000000.
   #Population III parameters
   ZMIN_POPIII:
     TYPE: FIXED

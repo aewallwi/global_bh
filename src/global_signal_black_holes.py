@@ -176,6 +176,9 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
                 y[tnum]=integrator.y[0]
                 tnum+=1
             y[y<=0]=np.exp(-90.)
+            if quant=='accreting':
+                y[taxis>=COSMO.age(kwargs['Z_SEED_MIN'])\
+                +kwargs['TAU_FEEDBACK']]=np.exp(-90.)
             SPLINE_DICT[splkey][quant]=interp.interp1d(taxis,np.log(y),
             bounds_error=False,
             fill_value=-90.)
@@ -187,6 +190,7 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
             rho_bh_seeds[tn]=rho_collapse_eps(mmin,mmax,zval)\
             *kwargs['FS']
         rho_bh_seeds[rho_bh_seeds<=0.]=np.exp(-90.)
+
         SPLINE_DICT[splkey]['seed']\
         =interp.interp1d(taxis,np.log(rho_bh_seeds),bounds_error=False,
         fill_value=-90)
@@ -609,6 +613,42 @@ def Jalpha_summand(n,z,mode='agn',pop=None,**kwargs):
         emissivity_lyalpha_stars(x,e_ly_n(n)*(1.+x)/(1.+z),
         mode='number',pop=pop,**kwargs)/COSMO.Ez(x),z,zmax(z,n))[0]*pn_alpha(n)
 
+def J_Xrays_obs(Eobs,**kwargs):
+    '''
+    Compute the X-ray background from black holes and stars.
+    Args:
+        Eobs, observed X-ray energy
+    Returns:
+        X-ray flux in keV/sec/keV/m^2/Sr
+    '''
+    if isinstance(Eobs,np.ndarray):
+        jfactor=DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.
+        return np.vectorize(lambda y: jfactor*integrate.quad(lambda x: \
+        (emissivity_xrays(x,y*(1.+x),**kwargs)\
+        +emissivity_xrays_stars(x,y*(1.+x),pop='II')\
+        +emissivity_xrays_stars(x,y*(1.+x),pop='III'))/(1.+x)/COSMO.Ez(x),
+        kwargs['ZLOW'],kwargs['ZHIGH'])[0])(Eobs)*jfactor
+    else:
+        raise(ValueError('Must provide frequencies as numpy array or float.'))
+
+def T_radio_obs(fobs,**kwargs):
+    '''
+    Compute the radio background from models of black holes and stars.
+    Args:
+        fobs, observed radio frequency
+    Returns:
+        radio background in Kelvin at frequency fobs at redshift 0.
+    '''
+
+    if isinstance(fobs,np.dnarray) or isinstance(fobs,float):
+        tfactor=DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.*(C*1e3/fobs)**2./2./KBOLTZMANN
+        np.vectorize(lambda y: tfactor*integrate.quad(lambda x: \
+        emissivity_radio(x,y*(1.+x),**kwargs)/(1.+x)/COSMO.Ez(x),
+        kwargs['ZLOW'],kwargs['ZHIGH'])[0])(fobs)*tfactor
+    else:
+        raise(ValueError('Must provide frequencies as numpy array or float.'))
+
+
 
 def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
 ,**kwargs):
@@ -766,12 +806,20 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
         *(1.-(TCMB0/aaxis[tnum]+Trads[tnum])/Tspins[tnum])\
         *(COSMO.Ob(0.)*LITTLEH**2./0.023)*(0.15/COSMO.Om(0.)/LITTLEH**2.)\
         *(1./10./aaxis[tnum])**.5
+    #generate radio background between 10MHz and 10 GHz
+    faxis_rb=np.logspace(7,10,100)
+    tradio_obs=T_radio_obs(faxis_rb,**kwargs)
+    eaxis_xb=np.logspace(np.log10(2.),1.,100)
+    #compute soft XRB between 2-10 keV
+    jx_obs=J_Xrays_obs(eaxis_xb,**kwargs)
     output={'T':taxis,'Z':zaxis,'Tk':Tks,'Xe':xes,'Q':q_ion,'Trad':Trads,
     'Ts':Tspins,'Tb':tb,'Xalpha':xalphas,'Tc':Talphas,
     'Jalpha':Jalphas,'Xcoll':xcolls,'Jalpha*':Jalphas_stars,'Talpha':Talphas,
     'rho_bh_a':rho_bh(zaxis,quantity='accreting',**kwargs),
     'rho_bh_q':rho_bh(zaxis,quantity='quiescent',**kwargs),
-    'rho_bh_s':rho_bh(zaxis,quantity='seed',**kwargs)}
+    'rho_bh_s':rho_bh(zaxis,quantity='seed',**kwargs),
+    'rb_obs':np.vstack([faxis_rb,tradio_obs]).T,
+    'ex_obs':np.vstack([eaxis_xb,jx_obs])}
     if diagnostic:
         output['jxs']=np.array(jx_matrix)
         output['xrays']=np.array(xray_matrix)
