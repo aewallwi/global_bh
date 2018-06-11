@@ -691,7 +691,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
     if verbose: print('Initialzing xe and Tk with recfast values.')
     xes[0]=interp.interp1d(recfast[:,0],recfast[:,1])(zhigh)
     Tks[0]=interp.interp1d(recfast[:,0],recfast[:,-1])(zhigh)
-    xcolls[0]=x_coll(Tks[0],xes[0],zaxis[0])
+    xcolls[0]=x_coll(Tks[0],xes[0],zaxis[0],Trads[0])
     Tspins[0],Talphas[0],xalphas[0]=tspin(xcolls[0],Jalphas[0]+Jalphas_stars[0],
     Tks[0],Trads[0],zaxis[0],xes[0])
     if verbose: print('Initializing Interpolation.')
@@ -793,7 +793,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
             Tks[tnum]=tk+dTk_a+dTk_c+dTk_x+dTk_i
             xes[tnum]=xe+dxe
             #compute Tsping
-            xcolls[tnum]=x_coll(Tks[tnum],xes[tnum],zaxis[tnum])
+            xcolls[tnum]=x_coll(Tks[tnum],xes[tnum],zaxis[tnum],Trads[tnum])
             Tspins[tnum],Talphas[tnum],xalphas[tnum]=tspin(xcolls[tnum],
             Jalphas[tnum]+Jalphas_stars[tnum],
             Tks[tnum],Trads[tnum],zaxis[tnum],xes[tnum])

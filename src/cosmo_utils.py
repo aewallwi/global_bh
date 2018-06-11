@@ -591,7 +591,7 @@ def kappa_10_pH(tk):
         tk[tk>2e4]=2e4
     return 10.**SPLINE_DICT[splkey](np.log10(tk))
 
-def x_coll(tk,xe,z):
+def x_coll(tk,xe,z,tr):
     '''
     collisional coupling constant
     Args:
@@ -599,7 +599,7 @@ def x_coll(tk,xe,z):
         xe, ionization fraction of Hydrogen and Helium I
         z, redshift
     '''
-    return 0.0628/TCMB0/(1.+z)/A10*(kappa_10_HH(tk)*(1.-xe)\
+    return 0.0628/(tr+TCMB0*(1.+z))/A10*(kappa_10_HH(tk)*(1.-xe)\
     +xe*(kappa_10_eH(tk)+kappa_10_pH(tk)))*NH0_CM*(1.+z)**3.
 
 
@@ -645,16 +645,16 @@ def tc_eff(tk,ts):
     '''
     return (1./tk+0.405535/tk*(1./ts-1./tk))**-1.
 
-def xalpha_over_jalpha(tk,ts,z,xe):
+def xalpha_over_jalpha(tk,ts,tr,xe):
     '''
     Ly-alpha coupling constant/Ly-alpha flux
     Args:
         tk, kinetic temperature (kelvin)
         ts, spin temperature (kelvin)
-        z, redshift
+        tr, 21-cm brightness temperature background (including CMB+sources)
         xe, ioniszation fraction
     '''
-    return s_alpha_tilde(tk,ts,z,xe)*1.66e11/(1.+z)
+    return s_alpha_tilde(tk,ts,z,xe)*1.66e11*TCMB0/tr
 
 def pn_alpha(n):
     '''
@@ -702,10 +702,10 @@ def tspin(xc,ja,tk,trad,z,xe):
         ts=tcmb+trad
         ts_old=0.
         ta=tc_eff(tk,ts)#+tcmb
-        xa=xalpha_over_jalpha(tk,ts,z,xe)*ja
+        xa=xalpha_over_jalpha(tk,ts,trad+tcmb,xe)*ja
         while(np.abs(ts-ts_old)/ts>1e-3):
             ts_old=ts
-            xa=xalpha_over_jalpha(tk,ts,z,xe)*ja
+            xa=xalpha_over_jalpha(tk,ts,trad+tcmb,xe)*ja
             ta=tc_eff(tk,ts)#+tcmb
             ts=(1.+xa+xc)/(1./(trad+tcmb)+xa/ta+xc/tk)
     else:
