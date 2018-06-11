@@ -623,10 +623,10 @@ def J_Xrays_obs(Eobs,**kwargs):
     '''
     if isinstance(Eobs,np.ndarray):
         jfactor=DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.
-        return np.vectorize(lambda y: jfactor*integrate.quad(lambda x: \
+        return np.vectorize(lambda y: integrate.quad(lambda x: \
         (emissivity_xrays(x,y*(1.+x),**kwargs)\
-        +emissivity_xrays_stars(x,y*(1.+x),pop='II')\
-        +emissivity_xrays_stars(x,y*(1.+x),pop='III'))/(1.+x)/COSMO.Ez(x),
+        +emissivity_xrays_stars(x,y*(1.+x),pop='II',**kwargs)\
+        +emissivity_xrays_stars(x,y*(1.+x),pop='III',**kwargs))/(1.+x)/COSMO.Ez(x),
         kwargs['ZLOW'],kwargs['ZHIGH'])[0])(Eobs)*jfactor
     else:
         raise(ValueError('Must provide frequencies as numpy array or float.'))
@@ -640,11 +640,12 @@ def T_radio_obs(fobs,**kwargs):
         radio background in Kelvin at frequency fobs at redshift 0.
     '''
 
-    if isinstance(fobs,np.dnarray) or isinstance(fobs,float):
+    if isinstance(fobs,np.ndarray) or isinstance(fobs,float):
         tfactor=DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.*(C*1e3/fobs)**2./2./KBOLTZMANN
-        np.vectorize(lambda y: tfactor*integrate.quad(lambda x: \
-        emissivity_radio(x,y*(1.+x),**kwargs)/(1.+x)/COSMO.Ez(x),
-        kwargs['ZLOW'],kwargs['ZHIGH'])[0])(fobs)*tfactor
+        g=lambda y: integrate.quad(lambda x: emissivity_radio(x,y*(1.+x),
+        **kwargs)/(1.+x)/COSMO.Ez(x),
+        kwargs['ZLOW'],kwargs['ZHIGH'])[0]
+        return np.vectorize(g)(fobs)*tfactor
     else:
         raise(ValueError('Must provide frequencies as numpy array or float.'))
 
@@ -856,6 +857,8 @@ class GlobalSignal():
         self.param_vals['MFDEFF']=self.config['MFDEFF']
         self.param_vals['NTIMESGLOBAL']=self.config['NTIMESGLOBAL']
         self.param_vals['DENSITYMETHOD']=self.config['DENSITYMETHOD']
+        self.param_vals['ZLOW']=self.config['ZLOW']
+        self.param_vals['ZHIGH']=self.config['ZHIGH']
         self.param_history=[]#list of parameters for each calculation
         self.global_signals={}#list of global signals to store
     def set(self,key,value):
