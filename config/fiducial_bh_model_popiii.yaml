@@ -130,7 +130,7 @@ PARAMS:
   #Radio parameters
   FLOUD: #Fraction of black holes that are radio loud
     TYPE: FIXED
-    P0: 0.1
+    P0: 0.2
   R_MEAN: #Mean of radio loudness distribution
     TYPE: FIXED
     P0: 2.8
