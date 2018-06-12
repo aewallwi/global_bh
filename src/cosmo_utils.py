@@ -645,7 +645,7 @@ def tc_eff(tk,ts):
     '''
     return (1./tk+0.405535/tk*(1./ts-1./tk))**-1.
 
-def xalpha_over_jalpha(tk,ts,tr,xe):
+def xalpha_over_jalpha(tk,ts,tr,z,xe):
     '''
     Ly-alpha coupling constant/Ly-alpha flux
     Args:
@@ -654,7 +654,7 @@ def xalpha_over_jalpha(tk,ts,tr,xe):
         tr, 21-cm brightness temperature background (including CMB+sources)
         xe, ioniszation fraction
     '''
-    return s_alpha_tilde(tk,ts,z,xe)*1.66e11*TCMB0/tr
+    return s_alpha_tilde(tk,ts,z,xe)*1.66e11*TCMB0/(tr+TCMB0*(1.+z))
 
 def pn_alpha(n):
     '''
@@ -702,10 +702,10 @@ def tspin(xc,ja,tk,trad,z,xe):
         ts=tcmb+trad
         ts_old=0.
         ta=tc_eff(tk,ts)#+tcmb
-        xa=xalpha_over_jalpha(tk,ts,trad+tcmb,xe)*ja
+        xa=xalpha_over_jalpha(tk,ts,trad,z,xe)*ja
         while(np.abs(ts-ts_old)/ts>1e-3):
             ts_old=ts
-            xa=xalpha_over_jalpha(tk,ts,trad+tcmb,xe)*ja
+            xa=xalpha_over_jalpha(tk,ts,trad,z,xe)*ja
             ta=tc_eff(tk,ts)#+tcmb
             ts=(1.+xa+xc)/(1./(trad+tcmb)+xa/ta+xc/tk)
     else:

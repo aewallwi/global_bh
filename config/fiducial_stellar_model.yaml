@@ -9,6 +9,7 @@ CONFIG:
   MFMODEL: tinker08
   MFDEFF: 200m
   DENSITYMETHOD: ANALYTIC
+  COMPUTEBACKGROUNDS: False
 PARAMS:
   NTIMES:
     TYPE: FIXED
@@ -18,7 +19,7 @@ PARAMS:
     P0: 80.
   TAU_DELAY:
     TYPE: FIXED
-    P0: 0.01
+    P0: 0.0
   #Population II parameters
   ZMIN_POPII:
     TYPE: FIXED
@@ -46,7 +47,7 @@ PARAMS:
     P0: 0.1
   TMIN_POPII:
     TYPE: FIXED
-    P0: 50000.
+    P0: 30000.
   TMAX_POPII:
     TYPE: FIXED
     P0: 1000000.
@@ -87,7 +88,7 @@ PARAMS:
     P0: 6.
   Z_SEED_MIN:
     TYPE: FIXED
-    P0: 10.
+    P0: 16.
   TAU_GROW:
     TYPE: FIXED
     P0: 0.1

@@ -809,10 +809,14 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
         *(1./10./aaxis[tnum])**.5
     #generate radio background between 10MHz and 10 GHz
     faxis_rb=np.logspace(7,10,100)
-    tradio_obs=T_radio_obs(faxis_rb,**kwargs)
     eaxis_xb=np.logspace(np.log10(2.),1.,100)
+    if kwargs['COMPUTEBACKGROUNDS']:
+        tradio_obs=T_radio_obs(faxis_rb,**kwargs)
+        jx_obs=J_Xrays_obs(eaxis_xb,**kwargs)
+    else:
+        tradio_obs=np.zeros_like(faxis_rb)
+        jx_obs=np.zeros_like(eaxis_xb)
     #compute soft XRB between 2-10 keV
-    jx_obs=J_Xrays_obs(eaxis_xb,**kwargs)
     output={'T':taxis,'Z':zaxis,'Tk':Tks,'Xe':xes,'Q':q_ion,'Trad':Trads,
     'Ts':Tspins,'Tb':tb,'Xalpha':xalphas,'Tc':Talphas,
     'Jalpha':Jalphas,'Xcoll':xcolls,'Jalpha*':Jalphas_stars,'Talpha':Talphas,
@@ -859,6 +863,7 @@ class GlobalSignal():
         self.param_vals['DENSITYMETHOD']=self.config['DENSITYMETHOD']
         self.param_vals['ZLOW']=self.config['ZLOW']
         self.param_vals['ZHIGH']=self.config['ZHIGH']
+        self.param_vals['COMPUTEBACKGROUNDS']=self.config['COMPUTEBACKGROUNDS']
         self.param_history=[]#list of parameters for each calculation
         self.global_signals={}#list of global signals to store
     def set(self,key,value):
