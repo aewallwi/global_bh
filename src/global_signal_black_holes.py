@@ -869,6 +869,7 @@ class GlobalSignal():
         self.param_vals['COMPUTEBACKGROUNDS']=self.config['COMPUTEBACKGROUNDS']
         self.param_history={}#dictionary of parameters for each run
         self.global_signals={}#dictionary of global signal files for each run
+        self.run_dates=[]
     def set(self,key,value):
         '''
         set a parameter value
@@ -895,21 +896,37 @@ class GlobalSignal():
             self.param_vals[key]=self.param_vals[key]*10.**dvalue
         self.param_history.append(copy.deepcopy(self.param_vals))
     def calculate_global(self):
-        self.run_dates[dict2tuple(self.param_vals)]=datetime.datetime.now()
-        self.global_signals[dict2tuple(self.param_vals)]=delta_Tb(\
+        rundate=str(datetime.datetime.now())
+        self.run_dates.append(rundate)
+        self.global_signals[rundate]=delta_Tb(\
         zlow=self.config['ZLOW'],zhigh=self.config['ZHIGH'],
         ntimes=self.param_vals['NTIMESGLOBAL'],**self.param_vals,diagnostic=True)
-        self.param_history[dict2tuple(self.param_vals)]=copy.deepcopy(self.param_vals))
+        self.param_history[rundate]=copy.deepcopy(self.param_vals)
     def save_to_disk(self):
         hf = h5py.File(self.config['OUTPUTNAME']+'.h5', 'w')
-        for simkey in self.global_signals:
-            grun=hf.create_group('run_%s'%str(self.param_history[simkey]))
-            param_set=self.param_history[simkey]
-            data_set=self.global_signals[simkey]
-            for data_key in data_set:
-                gf.create_dataset(data_key,data_set[data_key])
-            for param_key in param_set:
-                gf.attr[param_key]=param_set[param_key]
-            run_num+=1
-
+        for rundate in self.run_dates:
+            #check if group already exists if not, create a new group.
+            if not rundate in hf:
+                gf=hf.create_group(rundate)
+                param_set=self.param_history[rundate]
+                data_set=self.global_signals[rundate]
+                for data_key in data_set:
+                    gf.create_dataset(data_key,data=data_set[data_key])
+                for param_key in param_set:
+                    gf.attrs[param_key]=param_set[param_key]
         hf.close()
+    def read_from_disk(self):
+        hf = h5py.File(self.config['OUTPUTNAME']+'.h5','r')
+        #prepend run dates, param history, and global signals
+        newdates=[]
+        for rundate in hf:
+            newdates=newdates+[rundate]
+            params={}
+            signal={}
+            for param in hf[rundate].attrs:
+                params[param]=hf[rundate].attrs[param]
+            for signalname in hf[rundate]:
+                signals[signalname]=np.array(hf[signalname])
+            self.global_signals[rundate]=signals
+            self.param_history[rundate]=params
+        self.run_dates=newdates+self.run_dates
