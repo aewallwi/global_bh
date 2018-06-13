@@ -9,18 +9,24 @@ CONFIG:
   MFMODEL: tinker08
   MFDEFF: 200m
   DENSITYMETHOD: ANALYTIC
-  COMPUTEBACKGROUNDS: False
-  OUTPUTNAME: fiducial_stellar_model
+  COMPUTEBACKGROUNDS: True
+  OUTPUTNAME: fiducial_bh_model_popiii_unobscured
 PARAMS:
+  TAU_DELAY:
+    TYPE: FIXED
+    P0: 0.0
+  TAU_DELAY_POPII:
+    TYPE: FIXED
+    P0: 0.00
+  TAU_DELAY_POPIII:
+    TYPE: FIXED
+    P0: 0.00
   NTIMES:
     TYPE: FIXED
     P0: 400
   ZMAX:
     TYPE: FIXED
     P0: 80.
-  TAU_DELAY:
-    TYPE: FIXED
-    P0: 0.0
   #Population II parameters
   ZMIN_POPII:
     TYPE: FIXED
@@ -31,9 +37,6 @@ PARAMS:
   N_ION_POPII:
     TYPE: FIXED
     P0: 4400.
-  TAU_DELAY_POPII:
-    TYPE: FIXED
-    P0: 0.0
   ALPHA_X_POPII:
     TYPE: FIXED
     P0: 1.5
@@ -51,14 +54,14 @@ PARAMS:
     P0: 50000.
   TMAX_POPII:
     TYPE: FIXED
-    P0: 1000000.
+    P0: 100000000.
   #Population III parameters
   ZMIN_POPIII:
     TYPE: FIXED
     P0: 10.
   F_STAR_POPIII:
     TYPE: FIXED
-    P0: 0.025
+    P0: 0.00000001
   ALPHA_X_POPIII:
     TYPE: FIXED
     P0: 1.5
@@ -71,9 +74,6 @@ PARAMS:
   F_ESC_POPIII:
     TYPE: FIXED
     P0: 0.1
-  TAU_DELAY_POPIII:
-    TYPE: FIXED
-    P0: 0.00
   N_ION_POPIII:
     TYPE: FIXED
     P0: 30000.
@@ -92,19 +92,19 @@ PARAMS:
     P0: 16.
   TAU_GROW:
     TYPE: FIXED
-    P0: 0.1
+    P0: 0.045
   TAU_FEEDBACK:
     TYPE: FIXED
     P0: 0.1
   TMIN_HALO:
     TYPE: FIXED
-    P0: 2000.
+    P0: 8000.
   TMAX_HALO:
     TYPE: FIXED
-    P0: 10000.
+    P0: 20000.
   FS:
     TYPE: FIXED
-    P0: 1.0e-20
+    P0: 3.0e-5
   #X-ray parameters
   GBOL: #fraction of Eddington between 2-10 keV
     TYPE: FIXED
@@ -114,7 +114,7 @@ PARAMS:
     P0: 0.9
   LOG10_N: #Hydrogen column depth
     TYPE: FIXED
-    P0: 23.5
+    P0: 21.
   #Optical Parameters
   ALPHA_OX:
     TYPE: FIXED
@@ -127,7 +127,7 @@ PARAMS:
     P0: 1.71
   F_ESC: #Ly-C escape fraction
     TYPE: FIXED
-    P0: 0.1
+    P0: 1.0
   #Radio parameters
   FLOUD: #Fraction of black holes that are radio loud
     TYPE: FIXED

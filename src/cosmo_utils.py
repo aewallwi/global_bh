@@ -38,6 +38,16 @@ def dict2tuple(dictionary):
         else:
             output=output+(key,dictionary[key])
     return output
+def dict2string(dictionary):
+    '''
+    Convert dictionary to a string
+    '''
+    outout=''
+    for key in diciontary.keys():
+        if isinstance(dictionary[key],dict):
+            output=output+dict2string(dictionary[key])
+        else:
+            output=output+','+str(key)+':'+dictionary[key]
 #**********************************************************
 #cosmology utility functions
 #**********************************************************

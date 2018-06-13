@@ -2,6 +2,7 @@ import scipy.optimize as op
 import numpy as np
 import yaml
 import scipy.integrate as integrate
+import h5py
 from settings import COSMO,TEDDINGTON,MBH_INTERP_MAX,MBH_INTERP_MIN,SPLINE_DICT
 from settings import M_INTERP_MIN,LITTLEH,PI,JY,DH,MP,MSOL,TH,KBOLTZMANN
 from settings import N_INTERP_Z,N_INTERP_MBH,Z_INTERP_MAX,Z_INTERP_MIN,ERG
@@ -12,6 +13,7 @@ from settings import N_INTERP_X,TCMB0,ARAD,ME,TCMB0,HPLANCK_EV,NB0_CM,KEV,NSPEC_
 from cosmo_utils import *
 import scipy.interpolate as interp
 import copy
+import datetime
 #import radio_background as RB
 #mport camb
 import os
@@ -829,6 +831,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
         output['jxs']=np.array(jx_matrix)
         output['xrays']=np.array(xray_matrix)
         output['taus']=np.array(dtau_matrix)
+    #save output dictionary
     return output
 
 
@@ -864,8 +867,8 @@ class GlobalSignal():
         self.param_vals['ZLOW']=self.config['ZLOW']
         self.param_vals['ZHIGH']=self.config['ZHIGH']
         self.param_vals['COMPUTEBACKGROUNDS']=self.config['COMPUTEBACKGROUNDS']
-        self.param_history=[]#list of parameters for each calculation
-        self.global_signals={}#list of global signals to store
+        self.param_history={}#dictionary of parameters for each run
+        self.global_signals={}#dictionary of global signal files for each run
     def set(self,key,value):
         '''
         set a parameter value
@@ -875,9 +878,9 @@ class GlobalSignal():
         '''
         if key in self.param_vals:
             self.param_vals[key]=value
-            self.param_history.append(copy.deepcopy(self.param_vals))
+            #self.param_history.append(copy.deepcopy(self.param_vals))
         else:
-            print('Warngin: Invalid Parameter Supplied')
+            print('Warning: Invalid Parameter Supplied')
     def increment(self,key,dvalue,log=False,base=10.):
         '''
         increment the value of a parameter
@@ -892,6 +895,21 @@ class GlobalSignal():
             self.param_vals[key]=self.param_vals[key]*10.**dvalue
         self.param_history.append(copy.deepcopy(self.param_vals))
     def calculate_global(self):
+        self.run_dates[dict2tuple(self.param_vals)]=datetime.datetime.now()
         self.global_signals[dict2tuple(self.param_vals)]=delta_Tb(\
         zlow=self.config['ZLOW'],zhigh=self.config['ZHIGH'],
         ntimes=self.param_vals['NTIMESGLOBAL'],**self.param_vals,diagnostic=True)
+        self.param_history[dict2tuple(self.param_vals)]=copy.deepcopy(self.param_vals))
+    def save_to_disk(self):
+        hf = h5py.File(self.config['OUTPUTNAME']+'.h5', 'w')
+        for simkey in self.global_signals:
+            grun=hf.create_group('run_%s'%str(self.param_history[simkey]))
+            param_set=self.param_history[simkey]
+            data_set=self.global_signals[simkey]
+            for data_key in data_set:
+                gf.create_dataset(data_key,data_set[data_key])
+            for param_key in param_set:
+                gf.attr[param_key]=param_set[param_key]
+            run_num+=1
+
+        hf.close()
