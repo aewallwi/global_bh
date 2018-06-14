@@ -922,11 +922,12 @@ class GlobalSignal():
         for rundate in hf:
             newdates=newdates+[rundate]
             params={}
-            signal={}
+            signals={}
             for param in hf[rundate].attrs:
                 params[param]=hf[rundate].attrs[param]
             for signalname in hf[rundate]:
-                signals[signalname]=np.array(hf[signalname])
+                signals[signalname]=np.array(hf[rundate][signalname])
             self.global_signals[rundate]=signals
             self.param_history[rundate]=params
         self.run_dates=newdates+self.run_dates
+        hf.close()
