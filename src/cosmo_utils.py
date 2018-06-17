@@ -159,9 +159,6 @@ def tvir2mvir(t,z,mu=1.22):
     Returns:
         dark-matter halo mass corresponding to virial temperature tvir in Msol/h
     '''
-    #print(t)
-    #print(tvir(1e8,z,mu))
-    #print(tvir(1e8,z,mu)/t)
     return 1e8*(t/tvir(1e8,z,mu))**(3./2.)
 
 def stellar_spectrum(E_uv_in,pop='II',**kwargs):

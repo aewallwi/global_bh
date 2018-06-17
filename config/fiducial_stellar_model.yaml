@@ -13,131 +13,131 @@ CONFIG:
   OUTPUTNAME: fiducial_stellar_model
 PARAMS:
   NTIMES:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 400
   ZMAX:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 80.
   TAU_DELAY:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.0
   #Population II parameters
   ZMIN_POPII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 6.
   F_STAR_POPII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.1
   N_ION_POPII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 4400.
   TAU_DELAY_POPII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.0
   ALPHA_X_POPII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 1.5
   FX_POPII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 1.
   LOG10_N_POPII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 19.
   F_ESC_POPII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.1
   TMIN_POPII:
-    TYPE: FIXED
-    P0: 50000.
+    TYPE: FLOAT
+    P0: 5.0e4
   TMAX_POPII:
-    TYPE: FIXED
-    P0: 1000000.
+    TYPE: FLOAT
+    P0: 1.0e8
   #Population III parameters
   ZMIN_POPIII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 10.
   F_STAR_POPIII:
-    TYPE: FIXED
-    P0: 0.025
+    TYPE: FLOAT
+    P0: 1.0e-10
   ALPHA_X_POPIII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 1.5
   FX_POPIII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 1.
   LOG10_N_POPIII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 19.
   F_ESC_POPIII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.1
   TAU_DELAY_POPIII:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.00
   N_ION_POPIII:
-    TYPE: FIXED
-    P0: 30000.
+    TYPE: FLOAT
+    P0: 3.0e4
   TMIN_POPIII:
-    TYPE: FIXED
-    P0: 8000.
+    TYPE: FLOAT
+    P0: 8.0e3
   TMAX_POPIII:
-    TYPE: FIXED
-    P0: 10000.
+    TYPE: FLOAT
+    P0: 1.0e4
   #Formation Parameters
   ZMIN:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 6.
   Z_SEED_MIN:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 16.
   TAU_GROW:
-    TYPE: FIXED
-    P0: 0.1
+    TYPE: FLOAT
+    P0: 0.045
   TAU_FEEDBACK:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.1
   TMIN_HALO:
-    TYPE: FIXED
-    P0: 2000.
+    TYPE: FLOAT
+    P0: 8.0e3
   TMAX_HALO:
-    TYPE: FIXED
-    P0: 10000.
+    TYPE: FLOAT
+    P0: 2.0e4
   FBH:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 1.0e-20
   #X-ray parameters
   GBOL: #fraction of Eddington between 2-10 keV
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.003
   ALPHA_X: #X-ray spectral index
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.9
   LOG10_N: #Hydrogen column depth
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 23.5
   #Optical Parameters
   ALPHA_OX:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 1.6
   ALPHA_O1:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.61 #Spectral index blue of 13.6 eV
   ALPHA_O2:
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 1.71
   F_ESC: #Ly-C escape fraction
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.1
   #Radio parameters
   FLOUD: #Fraction of black holes that are radio loud
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.2
   R_MEAN: #Mean of radio loudness distribution
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 2.8
   R_STD: #Standard deviation of Radio distribution
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 1.1
   ALPHA_R: #Radio Specral Index
-    TYPE: FIXED
+    TYPE: FLOAT
     P0: 0.6

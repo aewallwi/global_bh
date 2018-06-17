@@ -855,6 +855,8 @@ class GlobalSignal():
             del yamldict
             self.param_vals={}
             for key in self.params:
+                if self.params[key]['TYPE']=='FLOAT':
+                    self.params[key]['P0']=float(self.params[key]['P0'])
                 self.param_vals[key]=self.params[key]['P0']
         self.param_vals['MULTIPROCESS']=self.config['MULTIPROCESS']
         self.param_vals['NPARALLEL']=self.config['NPARALLEL']
