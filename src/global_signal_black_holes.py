@@ -58,7 +58,7 @@ def rho_bh_seeds_z(z,**kwargs):
     mdef=kwargs['MFDEFF'])*10.**x
     limlow,limhigh=get_m_minmax(z,**kwargs)
     limlow,limhigh=np.log10(limlow),np.log10(limhigh)
-    output=integrate.quad(g,limlow,limhigh)[0]*kwargs['FS']
+    output=integrate.quad(g,limlow,limhigh)[0]*kwargs['FBH']
     return output
 
 def rho_stellar_analytic(z,pop,mode='derivative',fractional=False,verbose=False,**kwargs):
@@ -140,14 +140,14 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
             output=0.
             if t<=t_seed_max:
                 output=output\
-                +rho_collapse_eps(mmin,mmax,zval,derivative=True)*kwargs['FS']
+                +rho_collapse_eps(mmin,mmax,zval,derivative=True)*COSMO.Ob0/COSMO.Om0*kwargs['FBH']
             if tfb<=t_seed_max:
                 output=output+y/kwargs['TAU_GROW']
                 if tfb>taxis[0]:
                     zfb=COSMO.age(tfb,inverse=True)
                     mmin_fb,mmax_fb=get_m_minmax(zfb,**kwargs)
                     output=output-rho_collapse_eps(mmin_fb,mmax_fb,zfb,
-                    derivative=True)*fb_factor*kwargs['FS']
+                    derivative=True)*fb_factor*COSMO.Ob0/COSMO.Om0*kwargs['FBH']
             return output
         #define integrand to compute quiescent black hole density
         def bh_quiescent_integrand(t,y):
@@ -157,7 +157,7 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
             output=0.
             if tfb>taxis[0] and tfb<=t_seed_max:
                 output=output+rho_collapse_eps(mmin,mmax,zfb,
-                derivative=True)*fb_factor*kwargs['FS']
+                derivative=True)*fb_factor*COSMO.Ob0/COSMO.Om0*kwargs['FBH']
             return output
 
         #Now compute integrals
@@ -190,7 +190,7 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
             zval=COSMO.age(t,inverse=True)
             mmin,mmax=get_m_minmax(zval,**kwargs)
             rho_bh_seeds[tn]=rho_collapse_eps(mmin,mmax,zval)\
-            *kwargs['FS']
+            *COSMO.Ob0/COSMO.Om0*kwargs['FBH']
         rho_bh_seeds[rho_bh_seeds<=0.]=np.exp(-90.)
 
         SPLINE_DICT[splkey]['seed']\

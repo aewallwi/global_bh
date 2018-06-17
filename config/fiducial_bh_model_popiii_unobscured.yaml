@@ -102,9 +102,9 @@ PARAMS:
   TMAX_HALO:
     TYPE: FIXED
     P0: 20000.
-  FS:
+  FBH:
     TYPE: FIXED
-    P0: 3.0e-5
+    P0: 1.0e-4
   #X-ray parameters
   GBOL: #fraction of Eddington between 2-10 keV
     TYPE: FIXED

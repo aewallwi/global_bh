@@ -102,7 +102,7 @@ PARAMS:
   TMAX_HALO:
     TYPE: FIXED
     P0: 10000.
-  FS:
+  FBH:
     TYPE: FIXED
     P0: 1.0e-20
   #X-ray parameters
