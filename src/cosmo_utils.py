@@ -15,6 +15,10 @@ import scipy.interpolate as interp
 from settings import LY_N_ALPHA_SWITCH
 from settings import NSPEC_MAX
 import scipy.special as sp
+A_ST=0.3222
+B_ST=0.707
+P_ST=0.3
+
 #import pyccl as ccl
 #COSMO_CCL = ccl.Cosmology(Omega_c=0.27, Omega_b=0.045, h=0.67,
 #A_s=2.1e-9, n_s=0.96, Omega_k=0.)
@@ -97,9 +101,46 @@ def nu(z,m,d=False):
     #print('nu=%.2e'%output)
     return output
 
+def rho_collapse_analytic(mmin,mmax,z,derivative=False,fractional=False,mode='ShethTormen'):
+    assert mode in ['ShethTormen','PressSchechter']
+    if mode == 'ShethTormen':
+        return rho_collapse_st(mmin,mmax,z,derivative=derivative,fractional=fractional)
+    elif mode=='PressSchechter':
+        return rho_collapse_eps(mmin,mmax,z,derivative=derivative,fractional=fractional)
+
+def rho_collapse_st(mmin,mmax,z,derivative=False,fractional=False):
+    '''
+    Compute the comoving density of collapse matter or fraction of matter collapsed
+    in halos between mass mmin and mmax at redshift z \
+    Using Sheth Tormen mass function.
+    Args:
+        mmin, minimum halo mass (msolar/h)
+        mmax, maximum halo mass (msolar/h)
+        z, redshift
+        derivative, if tru return derivative with respect to time in Gyr^-1
+        fractional, if true, return fraction of density in halos, if false,
+                    return comoving density in halos.
+    '''
+    nmax=nu(z,mmax)
+    nmin=nu(z,mmin)
+    if not derivative:
+        output=sp.erf(B_ST**.5*nmin)+2.**(-P_ST)\
+        *sp.gamma(.5-P_ST)*sp.gammainc(.5-PST,B_ST*nmin**2.)
+        output=output-sp.erf(B_ST**.5*nmax)+2.**(-P_ST)\
+        *sp.gamma(.5-P_ST)*sp.gammainc(.5-PST,B_ST*nmax**2.)
+        output*=A_ST
+    else:
+        dzdt=-COSMO.Ez(z)*(1.+z)/TH
+        output=2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5/B_ST/nmax)**2.)**P_ST*nmax*np.exp(-nmax**2.*B_ST)
+        output=output-2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5/B_ST/nmin)**2.)**P_ST*nmin*np.exp(-nmin**2.*B_ST)
+        output=output*-COSMO.growthFactor(z,derivative=True)\
+        /COSMO.growthFactor(z)
+
+
+
 def rho_collapse_eps(mmin,mmax,z,derivative=False,fractional=False):
     '''
-    Compute comoving density of collapsed matter of fraction of matter collapsed
+    Compute comoving density of collapsed matter or fraction of matter collapsed
     in halos between mass mmin and mmax at redshift z \
     from extended press-schechter
     Args:

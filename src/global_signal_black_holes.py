@@ -70,7 +70,7 @@ def rho_stellar_analytic(z,pop,mode='derivative',fractional=False,verbose=False,
     else:
         d=False
     mmin,mmax=get_m_minmax(z,mode='POP'+pop,**kwargs)
-    return rho_collapse_eps(mmin,mmax,z,derivative=d,fractional=fractional)
+    return rho_collapse_analytic(mmin,mmax,z,derivative=d,fractional=fractional)
 
 
 
@@ -140,13 +140,13 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
             output=0.
             if t<=t_seed_max:
                 output=output\
-                +rho_collapse_eps(mmin,mmax,zval,derivative=True)*COSMO.Ob0/COSMO.Om0*kwargs['FBH']
+                +rho_collapse_analytic(mmin,mmax,zval,derivative=True)*COSMO.Ob0/COSMO.Om0*kwargs['FBH']
             if tfb<=t_seed_max:
                 output=output+y/kwargs['TAU_GROW']
                 if tfb>taxis[0]:
                     zfb=COSMO.age(tfb,inverse=True)
                     mmin_fb,mmax_fb=get_m_minmax(zfb,**kwargs)
-                    output=output-rho_collapse_eps(mmin_fb,mmax_fb,zfb,
+                    output=output-rho_collapse_analytic(mmin_fb,mmax_fb,zfb,
                     derivative=True)*fb_factor*COSMO.Ob0/COSMO.Om0*kwargs['FBH']
             return output
         #define integrand to compute quiescent black hole density
@@ -156,7 +156,7 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
             mmin,mmax=get_m_minmax(zfb,**kwargs)
             output=0.
             if tfb>taxis[0] and tfb<=t_seed_max:
-                output=output+rho_collapse_eps(mmin,mmax,zfb,
+                output=output+rho_collapse_analytic(mmin,mmax,zfb,
                 derivative=True)*fb_factor*COSMO.Ob0/COSMO.Om0*kwargs['FBH']
             return output
 
@@ -189,7 +189,7 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
         for tn,t in enumerate(taxis):
             zval=COSMO.age(t,inverse=True)
             mmin,mmax=get_m_minmax(zval,**kwargs)
-            rho_bh_seeds[tn]=rho_collapse_eps(mmin,mmax,zval)\
+            rho_bh_seeds[tn]=rho_collapse_analytic(mmin,mmax,zval)\
             *COSMO.Ob0/COSMO.Om0*kwargs['FBH']
         rho_bh_seeds[rho_bh_seeds<=0.]=np.exp(-90.)
 
@@ -203,16 +203,6 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
         bounds_error=False,fill_value=-90)
     return np.exp(SPLINE_DICT[splkey][quantity]\
     (COSMO.age(z)-kwargs['TAU_DELAY']))
-
-
-
-
-
-
-
-
-
-
 
 
 def rho_bh_runge_kutta(z,quantity='accreting',verbose=False,**kwargs):
@@ -528,7 +518,7 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
     zaxis=COSMO.age(taxis,inverse=True)
     qvals=np.zeros_like(taxis)
     qvals_He=np.zeros_like(qvals)
-    tau_vals=np.zeros_like(qvals)
+    dtau_vals=np.zeros_like(qvals)
     chi=YP/4./(1.-YP)
     #define integrand for helium ionization
     #define integrand for hydrogen ionization
@@ -563,7 +553,8 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
     #integrator.set_initial_value(0.,taxis[0])
     tnum=1
     qvals=np.zeros(len(taxis))
-    tau_vals=np.zeros(len(taxis))
+    dtau_vals=np.zeros(len(taxis)+1)#store tau increments
+    #last value is integrated tau to the lowest redshift.
     #while integrator.successful and tnum<len(taxis):
     #    integrator.integrate(integrator.t+dt)
     #    qvals[tnum]=integrator.y[0]
@@ -574,36 +565,16 @@ def q_ionize(zlow,zhigh,ntimes=int(1e4),T4=1.,**kwargs):
     qvals[qvals>1.]=1.
     qspline=interp.interp1d(np.append(taxis,2*taxis[-1]),
     np.append(qvals,1.))
-    print(qspline(taxis[-1]))
-    def tau_integrand(t,tau):
-        zval=COSMO.age(t,inverse=True)
-        return DH*1e3*KPC*1e2*NH0_CM*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
-        qspline(t)*(1.+chi)*(-TH/COSMO.Ez(zval))**-1.
-    for tnum in range(1,len(taxis)):
-        tau_vals[tnum]=tau_vals[tnum-1]\
-        +dt*tau_integrand(taxis[tnum-1],tau_vals[tnum-1])
-    #tnum=1
-    #integrator=integrate.ode(tau_integrand)
-    #integrator.set_initial_value(0.,taxis[0])
-    #while integrator.successful and tnum<len(taxis):
-    #    integrator.integrate(integrator.t+dt)
-    #    tau_vals[tnum]=integrator.y[0]
-    #    tnum+=1
-        '''
-        dq=-qvals[tnum-1]*trec_inv*dt
-        dq_He=-qvals_He[tnum-1]*trec_He_inv*dt
-        if zval>=kwargs['ZMIN'] and zval<=kwargs['ZMAX']:
-            dq=dq+ndot_uv(zval,E_low=13.6,E_high=4.*13.6,**kwargs)/NH0*dt
-            dq_He=dq_He+ndot_uv(zval,E_low=13.6*4.,E_high=np.inf,**kwargs)/NHE0
-        if zval>=kwargs['ZMIN_POPII'] and zval<=kwargs['ZMAX']:
-            dq=dq+ndot_uv_stars(zval,**kwargs)/NH0*dt
-        dtau=DH*1e3*KPC*1e2*NH0_CM*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
-        (qvals[tnum-1]*(1.+chi)+qvals_He[tnum-1]*chi)*dz
-        tau_vals[tnum]=tau_vals[tnum-1]+dtau
-        qvals[tnum]=qvals[tnum-1]+dq
-        qvals_He[tnum]=qvals_He[tnum-1]+dq_He
-        '''
-    return taxis,zaxis,qvals,tau_vals
+    #print(qspline(taxis[-1]))
+    def tau_integrand(zv):
+        return DH*1e3*KPC*1e2*NH0_CM*SIGMAT*(1.+zv)**2./COSMO.Ez(zv)*\
+        qspline(COSMO.age(zv))*(1.+chi)
+    for tnum in range(0,len(taxis)):
+        zval=COSMO.age(taxis[tnum],inverse=True)
+        dz=-COSMO.Ez(zval)*(1.+zval)/TH*dt
+        dtau_vals[tnum]=dz*tau_integrand(zval)
+    dtau_vals[-1]=SIGMAT*NH0_CM*DH*KPC*1e3*1e2*integrate.quad(lambda x: (1.+x)**2./COSMO.Ez(x),0.,zaxis.min())[0]
+    return taxis,zaxis,qvals,dtau_vals
 
 def Jalpha_summand(n,z,mode='agn',pop=None,**kwargs):
     if mode=='agn':
@@ -667,7 +638,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
     '''
     #begin by calculating HII history
     if verbose: print('Computing Ionization History')
-    taxis,zaxis,q_ion,_=q_ionize(zlow,zhigh,ntimes,T4_HII,**kwargs)
+    taxis,zaxis,q_ion,tau_values=q_ionize(zlow,zhigh,ntimes,T4_HII,**kwargs)
     aaxis=1./(1.+zaxis)
     xray_axis=np.logspace(-1,3,N_INTERP_X)
     radio_axis=np.logspace(6,12,N_INTERP_X)#radio frequencies
@@ -826,7 +797,8 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
     'rho_bh_q':rho_bh(zaxis,quantity='quiescent',**kwargs),
     'rho_bh_s':rho_bh(zaxis,quantity='seed',**kwargs),
     'rb_obs':np.vstack([faxis_rb,tradio_obs]).T,
-    'ex_obs':np.vstack([eaxis_xb,jx_obs])}
+    'ex_obs':np.vstack([eaxis_xb,jx_obs]),
+    'tau_ion_vals':tau_values}
     if diagnostic:
         output['jxs']=np.array(jx_matrix)
         output['xrays']=np.array(xray_matrix)

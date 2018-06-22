@@ -30,7 +30,7 @@ PARAMS:
     P0: 0.1
   N_ION_POPII:
     TYPE: FLOAT
-    P0: 4400.
+    P0: 2000.
   TAU_DELAY_POPII:
     TYPE: FLOAT
     P0: 0.0
