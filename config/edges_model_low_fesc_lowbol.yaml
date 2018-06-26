@@ -10,7 +10,7 @@ CONFIG:
   MFDEFF: 200m
   DENSITYMETHOD: ANALYTIC
   COMPUTEBACKGROUNDS: True
-  OUTPUTNAME: fiducial_bh_model_popiii_obscured
+  OUTPUTNAME: edges_model_low_fesc_lowbol
 PARAMS:
   TAU_DELAY:
     TYPE: FLOAT
@@ -51,7 +51,7 @@ PARAMS:
     P0: 0.1
   TMIN_POPII:
     TYPE: FLOAT
-    P0: 8.0e4
+    P0: 1.0e5
   TMAX_POPII:
     TYPE: FLOAT
     P0: 1.0e8
@@ -89,32 +89,32 @@ PARAMS:
     P0: 6.
   Z_SEED_MIN:
     TYPE: FLOAT
-    P0: 16.
+    P0: 20.4
   TAU_GROW:
     TYPE: FLOAT
-    P0: 0.045
+    P0: 0.01
   TAU_FEEDBACK:
     TYPE: FLOAT
     P0: 0.1
   TMIN_HALO:
     TYPE: FLOAT
-    P0: 8.0e3
+    P0: 2.0e4
   TMAX_HALO:
     TYPE: FLOAT
-    P0: 2.0e4
+    P0: 1.0e8
   FBH:
     TYPE: FLOAT
-    P0: 1.0e-4
+    P0: 1.0e-6
   #X-ray parameters
   GBOL: #fraction of Eddington between 2-10 keV
     TYPE: FLOAT
-    P0: 0.003
+    P0: 0.004
   ALPHA_X: #X-ray spectral index
     TYPE: FLOAT
-    P0: 0.9
+    P0: 0.5
   LOG10_N: #Hydrogen column depth
     TYPE: FLOAT
-    P0: 23.5
+    P0: 24.
   #Optical Parameters
   ALPHA_OX:
     TYPE: FLOAT
@@ -127,11 +127,11 @@ PARAMS:
     P0: 1.71
   F_ESC: #Ly-C escape fraction
     TYPE: FLOAT
-    P0: 0.1
+    P0: 0.01
   #Radio parameters
   FLOUD: #Fraction of black holes that are radio loud
     TYPE: FLOAT
-    P0: 0.2
+    P0: 0.3
   R_MEAN: #Mean of radio loudness distribution
     TYPE: FLOAT
     P0: 2.8

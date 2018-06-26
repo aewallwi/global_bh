@@ -124,18 +124,20 @@ def rho_collapse_st(mmin,mmax,z,derivative=False,fractional=False):
     nmax=nu(z,mmax)
     nmin=nu(z,mmin)
     if not derivative:
-        output=sp.erf(B_ST**.5*nmin)+2.**(-P_ST)\
-        *sp.gamma(.5-P_ST)*sp.gammainc(.5-PST,B_ST*nmin**2.)
-        output=output-sp.erf(B_ST**.5*nmax)+2.**(-P_ST)\
-        *sp.gamma(.5-P_ST)*sp.gammainc(.5-PST,B_ST*nmax**2.)
+        output=-sp.erf(B_ST**.5*nmin)-2.**(-P_ST)\
+        *sp.gamma(.5-P_ST)*sp.gammainc(.5-P_ST,B_ST*nmin**2.)
+        output=output+sp.erf(B_ST**.5*nmax)+2.**(-P_ST)\
+        *sp.gamma(.5-P_ST)*sp.gammainc(.5-P_ST,B_ST*nmax**2.)
         output*=A_ST
     else:
         dzdt=-COSMO.Ez(z)*(1.+z)/TH
-        output=2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5/B_ST/nmax)**2.)**P_ST*nmax*np.exp(-nmax**2.*B_ST)
-        output=output-2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5/B_ST/nmin)**2.)**P_ST*nmin*np.exp(-nmin**2.*B_ST)
+        output=2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(B_ST*nmax)**-2.)**P_ST)*nmax*np.exp(-nmax**2.*B_ST)
+        output=output-2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(B_ST*nmin)**-2.)**P_ST)*nmin*np.exp(-nmin**2.*B_ST)
         output=output*-COSMO.growthFactor(z,derivative=True)\
-        /COSMO.growthFactor(z)
-
+        /COSMO.growthFactor(z)*dzdt
+    if not fractional:
+        output=COSMO.rho_m(0.)*1e9*output
+    return output
 
 
 def rho_collapse_eps(mmin,mmax,z,derivative=False,fractional=False):

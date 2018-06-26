@@ -48,7 +48,7 @@ PARAMS:
     P0: 0.1
   TMIN_POPII:
     TYPE: FLOAT
-    P0: 5.0e4
+    P0: 8.0e4
   TMAX_POPII:
     TYPE: FLOAT
     P0: 1.0e8

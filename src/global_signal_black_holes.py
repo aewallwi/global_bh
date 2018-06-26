@@ -595,12 +595,22 @@ def J_Xrays_obs(Eobs,**kwargs):
         X-ray flux in keV/sec/keV/m^2/Sr
     '''
     if isinstance(Eobs,np.ndarray):
-        jfactor=DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.
-        return np.vectorize(lambda y: integrate.quad(lambda x: \
-        (emissivity_xrays(x,y*(1.+x),**kwargs)\
-        +emissivity_xrays_stars(x,y*(1.+x),pop='II',**kwargs)\
-        +emissivity_xrays_stars(x,y*(1.+x),pop='III',**kwargs))/(1.+x)/COSMO.Ez(x),
-        kwargs['ZLOW'],kwargs['ZHIGH'])[0])(Eobs)*jfactor
+        splkey=('J','Xrays')+dict2tuple(kwargs)
+        if not splkey in SPLINE_DICT:
+            jfactor=DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.
+            intfactor_bh=integrate.quad(lambda x: \
+            emissivity_xrays(x,(1.+x),obscured=False,**kwargs)/(1.+x)/COSMO.Ez(x),kwargs['ZLOW'],kwargs['ZHIGH'])[0]
+            intfactor_popii=integrate.quad(lambda x: \
+            emissivity_xrays_stars(x,(1.+x),obscured=False,pop='II',**kwargs)/(1.+x)/COSMO.Ez(x),kwargs['ZLOW'],kwargs['ZHIGH'])[0]
+            intfactor_popiii=integrate.quad(lambda x: \
+            emissivity_xrays_stars(x,(1.+x),obscured=False,pop='III',**kwargs)/(1.+x)/COSMO.Ez(x),kwargs['ZLOW'],kwargs['ZHIGH'])[0]
+            intfactor_popii=integrate.quad(lambda x:emissivity_xrays(x,(1.+x),**kwargs),kwargs['ZLOW'],kwargs['ZHIGH'])[0]
+            SPLINE_DICT[splkey+('BH','X')]=intfactor_bh*jfactor
+            SPLINE_DICT[splkey+('POPII','X')]=intfactor_popii*jfactor
+            SPLINE_DICT[splkey+('POPIII','X')]=intfactor_popiii*jfactor
+        return SPLINE_DICT[splkey+('BH','X')]*(Eobs)**(-kwargs['ALPHA_X'])+\
+               SPLINE_DICT[splkey+('POPII','X')]*(Eobs)**(-kwargs['ALPHA_X_POPII'])+\
+               SPLINE_DICT[splkey+('POPIII','X')]*(Eobs)**(-kwargs['ALPHA_X_POPIII'])
     else:
         raise(ValueError('Must provide frequencies as numpy array or float.'))
 
@@ -612,16 +622,17 @@ def T_radio_obs(fobs,**kwargs):
     Returns:
         radio background in Kelvin at frequency fobs at redshift 0.
     '''
-
     if isinstance(fobs,np.ndarray) or isinstance(fobs,float):
-        tfactor=DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.*(C*1e3/fobs)**2./2./KBOLTZMANN
-        g=lambda y: integrate.quad(lambda x: emissivity_radio(x,y*(1.+x),
-        **kwargs)/(1.+x)/COSMO.Ez(x),
-        kwargs['ZLOW'],kwargs['ZHIGH'])[0]
-        return np.vectorize(g)(fobs)*tfactor
+        splkey=('Temp','radio')+dict2tuple(kwargs)
+        if not splkey in SPLINE_DICT:
+            tfactor=DH/4./PI/(1e3*KPC)**2.*LITTLEH**3.*(C*1e3/1e9)**2./2./KBOLTZMANN
+            intfactor=integrate.quad(lambda x: emissivity_radio(x,1e9*(1.+x),
+            **kwargs)/(1.+x)/COSMO.Ez(x),
+            kwargs['ZLOW'],kwargs['ZHIGH'])[0]
+            SPLINE_DICT[splkey]=tfactor*intfactor
+        return SPLINE_DICT[splkey]*(fobs/1e9)**(-2.-kwargs['ALPHA_R'])
     else:
         raise(ValueError('Must provide frequencies as numpy array or float.'))
-
 
 
 def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
@@ -716,7 +727,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
             Jalphas_stars[tnum]=Jalphas_stars[tnum]*DH/aval**2./4./PI\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.*HPLANCK_EV
             dtaus=-dz*(DH*1e3*KPC*1e2)/aval**2./COSMO.Ez(zval)\
-            *(1.-(qval+(1.-qval)*xe))\
+            *(1.-qval)\
             *((1.-xe)*NH0_CM*sigma_HLike(xrays)\
             +(1.-xe)*NHE0_CM*sigma_HeI(xrays)\
             +xe*NHE0_CM*sigma_HLike(xrays,z=2.))
@@ -782,14 +793,14 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
         *(1./10./aaxis[tnum])**.5
     #generate radio background between 10MHz and 10 GHz
     faxis_rb=np.logspace(7,10,100)
-    eaxis_xb=np.logspace(np.log10(2.),1.,100)
     if kwargs['COMPUTEBACKGROUNDS']:
         tradio_obs=T_radio_obs(faxis_rb,**kwargs)
-        jx_obs=J_Xrays_obs(eaxis_xb,**kwargs)
     else:
         tradio_obs=np.zeros_like(faxis_rb)
-        jx_obs=np.zeros_like(eaxis_xb)
-    #compute soft XRB between 2-10 keV
+    #compute soft X-ray background by redshifting latest jx
+    jx_obs=jxs/(1.+zaxis[tnum])**3.
+    eaxis_xb=xrays/(1.+zaxis[tnum])
+
     output={'T':taxis,'Z':zaxis,'Tk':Tks,'Xe':xes,'Q':q_ion,'Trad':Trads,
     'Ts':Tspins,'Tb':tb,'Xalpha':xalphas,'Tc':Talphas,
     'Jalpha':Jalphas,'Xcoll':xcolls,'Jalpha*':Jalphas_stars,'Talpha':Talphas,
@@ -797,7 +808,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
     'rho_bh_q':rho_bh(zaxis,quantity='quiescent',**kwargs),
     'rho_bh_s':rho_bh(zaxis,quantity='seed',**kwargs),
     'rb_obs':np.vstack([faxis_rb,tradio_obs]).T,
-    'ex_obs':np.vstack([eaxis_xb,jx_obs]),
+    'ex_obs':np.vstack([eaxis_xb,jx_obs]).T,
     'tau_ion_vals':tau_values}
     if diagnostic:
         output['jxs']=np.array(jx_matrix)
