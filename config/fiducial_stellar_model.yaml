@@ -101,7 +101,7 @@ PARAMS:
     P0: 8.0e3
   TMAX_HALO:
     TYPE: FLOAT
-    P0: 2.0e4
+    P0: 1.0e8
   FBH:
     TYPE: FLOAT
     P0: 1.0e-20

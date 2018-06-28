@@ -10,7 +10,7 @@ CONFIG:
   MFDEFF: 200m
   DENSITYMETHOD: ANALYTIC
   COMPUTEBACKGROUNDS: True
-  OUTPUTNAME: fiducial_bh_model_popiii_obscured
+  OUTPUTNAME: fiducial_bh_model_popiii_unobscured_no_radio
 PARAMS:
   TAU_DELAY:
     TYPE: FLOAT
@@ -114,7 +114,7 @@ PARAMS:
     P0: 0.9
   LOG10_N: #Hydrogen column depth
     TYPE: FLOAT
-    P0: 23.5
+    P0: 21.
   #Optical Parameters
   ALPHA_OX:
     TYPE: FLOAT
@@ -127,11 +127,11 @@ PARAMS:
     P0: 1.71
   F_ESC: #Ly-C escape fraction
     TYPE: FLOAT
-    P0: 0.1
+    P0: 1.0
   #Radio parameters
   FLOUD: #Fraction of black holes that are radio loud
     TYPE: FLOAT
-    P0: 0.2
+    P0: 0.0
   R_MEAN: #Mean of radio loudness distribution
     TYPE: FLOAT
     P0: 2.8
