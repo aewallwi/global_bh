@@ -129,15 +129,20 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
         taxmin=np.max([.9*COSMO.age(kwargs['ZMAX'])-kwargs['TAU_DELAY'],.0015])
         taxis=np.linspace(taxmin,
         1.1*COSMO.age(kwargs['ZMIN']),kwargs['NTIMES'])
-        fb_factor=np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_GROW'])
         t_seed_max=COSMO.age(kwargs['Z_SEED_MIN'])
 
         #define integrand to compute accreting black hole density
         def bh_accreting_integrand(t,y):
-            tfb=t-kwargs['TAU_FEEDBACK']
             zval=COSMO.age(t,inverse=True)
             mmin,mmax=get_m_minmax(zval,**kwargs)
             output=0.
+            if kwargs['COMPUTE_FEEDBACK']:
+                tau_fb=tau_feedback_momentum(mvir=mmin,z=zval,
+                ta=kwargs['TAU_GROW'],fh=kwargs['FBH'],eps=kwargs['EPS'])
+            else:
+                tau_fb=kwargs['TAU_FEEDBACK']
+            fb_factor=np.exp(tau_fb/kwargs['TAU_GROW'])
+            tfb=t-tau_fb
             if t<=t_seed_max:
                 output=output\
                 +rho_collapse_analytic(mmin,mmax,zval,derivative=True)*COSMO.Ob0/COSMO.Om0*kwargs['FBH']
@@ -235,7 +240,6 @@ def rho_bh_runge_kutta(z,quantity='accreting',verbose=False,**kwargs):
         #define black hole integrand
         rho_bh_accreting[0]=0.
         rho_bh[0]=0.
-        fb_factor=np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_GROW'])
         if not kwargs['FEEDBACK']:
             def bh_accreting_integrand(t,y):
                 output=y/kwargs['TAU_GROW']
@@ -246,6 +250,7 @@ def rho_bh_runge_kutta(z,quantity='accreting',verbose=False,**kwargs):
                 return 0.
         else:
             def bh_accreting_integrand(t,y):
+                fb_factor=np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_GROW'])
                 t0=t-kwargs['TAU_FEEDBACK']
                 output=0.
                 if t<=t_seed_max:
@@ -851,6 +856,8 @@ class GlobalSignal():
         self.param_vals['DENSITYMETHOD']=self.config['DENSITYMETHOD']
         self.param_vals['ZLOW']=self.config['ZLOW']
         self.param_vals['ZHIGH']=self.config['ZHIGH']
+        self.param_vals['COMPUTE_FEEDBACK']=self.config['COMPUTE_FEEDBACK']
+        self.param_vals['LW_FEEDBACK']=self.config['LW_FEEDBACK']
         self.param_vals['COMPUTEBACKGROUNDS']=self.config['COMPUTEBACKGROUNDS']
         self.param_history={}#dictionary of parameters for each run
         self.global_signals={}#dictionary of global signal files for each run

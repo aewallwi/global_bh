@@ -6,7 +6,7 @@ import os
 import scipy.integrate as integrate
 import scipy.interpolate as interpolate
 from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
-from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0,NH0_CM,YP,KPC
+from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0,NH0_CM,YP,KPC,YR,C,G
 from settings import POP_III_ION,POP_II_ION,DIRNAME,TH
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
@@ -192,6 +192,8 @@ def tvir(mhalo,z,mu=1.22):
     '''
     return 1.98e4*(mu/.6)*(mhalo/1e8)**(2./3.)\
     *(COSMO.Om(0.)/COSMO.Om(z)*delta(z)/18./PI/PI)**(1./3.)*((1.+z)/10.)
+
+
 def tvir2mvir(t,z,mu=1.22):
     '''
     convert from virial temperature to halo mass
@@ -203,6 +205,27 @@ def tvir2mvir(t,z,mu=1.22):
         dark-matter halo mass corresponding to virial temperature tvir in Msol/h
     '''
     return 1e8*(t/tvir(1e8,z,mu))**(3./2.)
+
+def mCool(zm, tIGM, xeIGM, jLyw, **kwargs):
+    #Solve for Tvir such that
+    #k_B T_vir/delta_c/n_H/x_H2/Lambda(Tvir) == T_hubble(z)
+    return None
+
+def mmin(z,tIGM,xeIGM,jLyw,**kwargs):
+    '''
+    determine the minimum mass for Pop-III formation
+    given the Ly-W background and the IGM temperature
+    Args:
+        z, redshift, float
+        tIGM, float, temperature of the IGM
+        xeIGM, float, electron fraction in IGM
+        Jlyw, Ly-W background.
+        **kwargs, parameters for simulation
+    '''
+    return np.max([tvir2mvir(tIGM,z),
+                  mCool(z,tIGM,xeIGM,jLyw,**kwargs)])
+
+
 
 def stellar_spectrum(E_uv_in,pop='II',**kwargs):
     #number of photons emitted (as fraction of ionizing)
@@ -784,3 +807,19 @@ def n_h(m,z,cs=1.):
     rval=rVir(m,z)*1e2*1e3*KPC/(1.+z)/LITTLEH/cs
     return (m*COSMO.Ob(0.)/COSMO.Om(0.)*(MSOL/LITTLEH))/(1.25*PI*MP*rval**2.)\
     *(1.-YP)/(1.-.75*YP)
+
+
+def tau_feedback_momentum(mvir,z,ta,fh,eps=5e-2):
+    '''
+    Calculate the effective feedback time
+    Args:
+        mvir, virial mass of halo (msolar/h)
+        z, redshift
+        ta, accretion time-scale (salpeter time) in Gyr
+        fh, fraction of halo baryons that are incorporated into bh seed
+        eps, radiative efficiency of accretion
+    Returns:
+        time (Gyr) before black hole mass growth is cutoff by momentum feedback
+    '''
+    vc=vVir(mh,z)*1e3
+    return ta*np.log(16.*vc**4.*ta*YR*1e9/(G*fh*mh*MSOL*eps*C*1e3))

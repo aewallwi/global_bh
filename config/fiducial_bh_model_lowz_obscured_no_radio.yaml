@@ -11,8 +11,12 @@ CONFIG:
   DENSITYMETHOD: ANALYTIC
   COMPUTEBACKGROUNDS: True
   OUTPUTNAME: fiducial_bh_model_lowz_obscured_no_radio
-
+  COMPUTE_FEEDBACK: False
+  LW_FEEDBACK: False
 PARAMS:
+  EPS:
+    TYPE: FLOAT
+    P0: 0.05
   TAU_DELAY:
     TYPE: FLOAT
     P0: 0.0
@@ -93,7 +97,7 @@ PARAMS:
     P0: 16.
   TAU_GROW:
     TYPE: FLOAT
-    P0: 0.9
+    P0: 4.5
   TAU_FEEDBACK:
     TYPE: FLOAT
     P0: 1.
@@ -109,7 +113,7 @@ PARAMS:
   #X-ray parameters
   GBOL: #fraction of Eddington between 2-10 keV
     TYPE: FLOAT
-    P0: 0.003
+    P0: 0.006
   ALPHA_X: #X-ray spectral index
     TYPE: FLOAT
     P0: 0.9

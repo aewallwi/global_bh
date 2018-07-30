@@ -11,7 +11,13 @@ CONFIG:
   DENSITYMETHOD: ANALYTIC
   COMPUTEBACKGROUNDS: True
   OUTPUTNAME: fiducial_bh_model_dcbh_obscured
+  COMPUTE_FEEDBACK: False
+  LW_FEEDBACK: False
 PARAMS:
+  EPS:
+    TYPE: FLOAT
+    P0: 0.05
+:
   TAU_DELAY:
     TYPE: FLOAT
     P0: 0.0
