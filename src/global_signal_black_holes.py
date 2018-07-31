@@ -156,11 +156,19 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
             return output
         #define integrand to compute quiescent black hole density
         def bh_quiescent_integrand(t,y):
-            tfb=t-kwargs['TAU_FEEDBACK']
-            zfb=COSMO.age(tfb,inverse=True)
-            mmin,mmax=get_m_minmax(zfb,**kwargs)
+            zval=COSMO.age(t,inverse=True)
+            mmin,mmax=get_m_minmax(zval,**kwargs)
+            if kwargs['COMPUTE_FEEDBACK']:
+                tau_fb=tau_feedback_momentum(mvir=mmin,z=zval,
+                ta=kwargs['TAU_GROW'],fh=kwargs['FBH'],eps=kwargs['EPS'])
+            else:
+                tau_fb=kwargs['TAU_FEEDBACK']
+            fb_factor=np.exp(tau_fb/kwargs['TAU_GROW'])
+            tfb=t-tau_fb
             output=0.
             if tfb>taxis[0] and tfb<=t_seed_max:
+                zfb=COSMO.age(tfb,inverse=True)
+                mmin,mmax=get_m_minmax(zfb,**kwargs)
                 output=output+rho_collapse_analytic(mmin,mmax,zfb,
                 derivative=True)*fb_factor*COSMO.Ob0/COSMO.Om0*kwargs['FBH']
             return output
@@ -654,7 +662,15 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
     '''
     #begin by calculating HII history
     if verbose: print('Computing Ionization History')
-    taxis,zaxis,q_ion,tau_values=q_ionize(zlow,zhigh,ntimes,T4_HII,**kwargs)
+    if not kwargs['LW_FEEDBACK']:
+        taxis,zaxis,q_ion,tau_values=q_ionize(zlow,zhigh,ntimes,T4_HII,**kwargs)
+    else:
+        tmax=COSMO.age(zlow)
+        tmin=COSMO.age(zhigh)
+        taxis=np.linspace(tmin,tmax,ntimes)
+        dt=(taxis[1]-taxis[0])#dt in Gyr
+        zaxis=COSMO.age(taxis,inverse=True)
+    
     aaxis=1./(1.+zaxis)
     xray_axis=np.logspace(-1,3,N_INTERP_X)
     radio_axis=np.logspace(6,12,N_INTERP_X)#radio frequencies

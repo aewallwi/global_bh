@@ -17,7 +17,6 @@ PARAMS:
   EPS:
     TYPE: FLOAT
     P0: 0.05
-:
   TAU_DELAY:
     TYPE: FLOAT
     P0: 0.0

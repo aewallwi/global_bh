@@ -821,5 +821,49 @@ def tau_feedback_momentum(mvir,z,ta,fh,eps=5e-2):
     Returns:
         time (Gyr) before black hole mass growth is cutoff by momentum feedback
     '''
-    vc=vVir(mh,z)*1e3
-    return ta*np.log(16.*vc**4.*ta*YR*1e9/(G*fh*mh*MSOL*eps*C*1e3))
+    vc=vVir(mvir,z)*1e3
+    return ta*np.log(16.*vc**4.*ta*YR*1e9/(G*fh*mvir*MSOL*eps*C*1e3))
+
+def h2_cool_rate(t):
+    '''
+    h2 cooling rate per atom at temperature,t
+    Args:
+        t, temperature, kelvin
+    Returns:
+        cooling rate in erg cm^3 sec^-1
+    '''
+    output= - 103.0 + 97.59 * np.log(t) - 48.05 * np.log(t)**2. \
+    + 10.80 * np.log(t)**3. - 0.9032 * np.log(t)**4.
+    return np.exp(output)
+
+def h2_frac(tvir,z,xe,jlw,delta_c=2000ß):
+    '''
+    molecular fraction
+    Args:
+        tvir, virial temperature of halo
+        z, redshift
+        xe, electron fraction in IGM
+        jlw, lyman werner flux
+        delta_c, core overdensity.
+    '''
+    #July 30th 2018 -- I am here!
+    ne =
+    return
+
+
+
+def tau_cool(mvir,z,xe,jlw,delta_c=2000.):
+    '''
+    cooling time through H2
+    Args:
+        mh, halo mass (msolar/h)
+        z, redshift
+        xe, electron fraction
+        jlw, lyman-werner background in units of ergs/sec/cm^2
+        delta_c, overdensity of gaseous halo core
+    '''
+    tv = tvir(mvir,z)
+    nh = NH0*(1.+z)**3.*(1.-xe)
+    xh2 = h2_frac(tv,z,xe,jlw)
+    dcooldt = h2_cool_rate(tvir)
+    return KBOLTZMANN*tv/(delta_c * nh * xh2 * dcooldt )
