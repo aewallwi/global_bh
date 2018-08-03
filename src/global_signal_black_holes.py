@@ -856,6 +856,8 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
     dlogx=np.log10(xray_axis[1]/xray_axis[0])
     Tks=np.zeros(ntimes)
     xes=np.zeros(ntimes)
+    q_ion=np.zeros(ntimes)
+    tau_values=np.zeros(ntimes)
     xalphas=np.zeros(ntimes)
     xcolls=np.zeros(ntimes)
     jxs=np.zeros(N_INTERP_X)#X-ray flux
@@ -870,6 +872,7 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
     Talphas=np.zeros(ntimes)
     rho_bh_a=np.zeros(ntimes)
     rho_bh_q=np.zeros(ntimes)
+    rho_bh_s=np.zeros(ntimes)
     drho_coll_dt=np.zeros(ntimes)
     tb=np.zeros(ntimes)
     if diagnostic:
@@ -908,7 +911,7 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
         #/COSMO.Ez(x),zval,zmax(zaxis[tnum],n))[0]*pn_alpha(n)\
         #*DH/aval**2./4./PI/(1e3*KPC*1e2)*LITTLEH**3.
             if verbose: print('Incrementing black hole mass density')
-            tcrit=tv_crit(zval,xe,jlw)
+            tcrit=tv_crit(zval,xe,Jlws[tnum-1])
             mmin,mmax=get_m_minmax(zval,**kwargs)
             tmin=np.max([tcrit,tvir(mmin,zval),tk])
             mmin=tvir2mvir(tmin,zval)
@@ -920,8 +923,49 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
             tfb=tval-tau_fb
             #August 2nd 2018: I am here!
             if tfb>=taxis[0]:
-                dbh=dbh-interp.interp1d()
-
+                dbhq=interp.interp1d(taxis[:tnum],drho_coll_dt[:tnum])\
+                *np.exp(tau_fb/kwargs['TAU_GROW'])
+                dbh=dbh-dbhq
+                rho_bh_q[tnum]=rho_bh_q[tnum-1]+dt*dbhq
+            rho_bh_a[tnum]=rho_bh_a[tnum-1]+dbh*dt
+            rho_bh_s[tnum]=rho_collapse_analytic(mmin,mmax,zval)\
+            *COSMO.Ob0/COSMO.Om0*kwargs['FBH']
+            splkey=('rho_bh','analytic')+dict2tuple(kwargs)
+            rho_bh_a[rho_bh_a<=0.]=np.exp(-90.)
+            rho_bh_q[rho_bh_q<=0.]=np.exp(-90.)
+            rho_bh_s[rho_bh_s<=0.]=np.exp(-90.)
+            SPLINE_DICT[splkey]['accreting']=\
+            interp.interp1d(taxis[:tnum],np.log(rho_bh_a[:tnum]),
+            bounds_error=False,fill_value=-90.)
+            SPLINE_DICT[splkey]['quiescent']=\
+            interp.interp1d(taxis[:tnum],np.log(rho_bh_q[:tnum]),
+            bounds_error=False,fill_value=-90.)
+            SPLINE_DICT[splkey]['total']=\
+            interp.interp1d(taxis[:tnum],np.log(rho_bh_q[:tnum]+rho_bh_a[:tnum]),
+            bounds_error=False,fill_value=-90.)
+            SPLINE_DICT[splkey]['seed']=\
+            interp.interp1d(taxis[:tnum],np.log(rho_bh_s[:tnum]),
+            if verbose: print('Computing Ionized Fraction.')
+            zeta_popii=kwargs['F_ESC_POPII']*kwargs['F_STAR_POPII']\
+            *kwargs['N_ION_POPII']\
+            *4./(4.-3.*YP)
+            zeta_popiii=kwargs['F_ESC_POPIII']*kwargs['F_STAR_POPIII']\
+            *kwargs['N_ION_POPIII']\
+            *4./(4.-3.*YP)
+            rec_term=q*clumping_factor(zval)*alpha_A(T4)\
+            *NH0_CM*(1+chi)*(1.+zval)**3.*1e9*YR
+            dq=-rec_term
+            dq=dq+zeta_popii*rho_stellar(zval,pop='II',mode='derivative',
+            fractional=True,**kwargs)\
+            +zeta_popiii*rho_stellar(zval,pop='III',mode='derivative',
+            fractional=True,**kwargs)
+            dq=dq+ndot_uv(zval,**kwargs)/NH0
+            q_ion[tnum]=q_ion[tnum-1]
+            if q_ion[tnum-1]<=1.:
+                q_ion[tnum]+=dq*dt
+            dtau=DH*1e3*KPC*1e2*NH0_CM*SIGMAT*(1.+zv)**2./COSMO.Ez(zv)*\
+            q_ion[tnum-1]*(1.+chi)*dz
+            tau_values[tnum]=tau_valuse[tnum-1]+dtau
             if verbose: print('Computing Ly-alpha flux')
             if kwargs['MULTIPROCESS']:
                 if verbose: print('computing AGN Ly-Alpha')
@@ -943,6 +987,12 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
                         +Jalpha_summand(n,zaxis[tnum],mode='stars',
                         pop=pop,**kwargs)
             #kwargs['ALPHA_FACTOR']\
+            Jlws[tnum]=4e-2*DH/aaxis[tnum]**3./COSMO.Ez(zaxis[tnum])/4./PI\
+            /(1e3*KPC*1e2)**2.*LITTLEH**3.*emissivity_uv(zaxis[tnum],12.4)
+            #convert from ev/sec/ev/cm^2/sr to ev/sec/hz/cm^2/sr
+            Jlws[tnum]*=HPLANCK_EV
+            #convert frmo ev/sec/Hz/cm^2/sr to erg/hz/cm^2/sr
+            Jlws[tnum]*=EV/ERG
             Jalphas[tnum]=1.\
             *Jalphas[tnum]*DH/aval**2./4./PI\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.*HPLANCK_EV
