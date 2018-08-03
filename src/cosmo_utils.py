@@ -5,14 +5,15 @@ import numpy as np
 import os
 import scipy.integrate as integrate
 import scipy.interpolate as interpolate
+import scipy.optimize as op
 from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
 from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0,NH0_CM,YP,KPC,YR,C,G
-from settings import POP_III_ION,POP_II_ION,DIRNAME,TH
+from settings import POP_III_ION,POP_II_ION,DIRNAME,TH,KBOLTZMANN,ERG
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
 import scipy.interpolate as interp
-from settings import LY_N_ALPHA_SWITCH
+from settings import LY_N_ALPHA_SWITCH,HPLANCK_EV
 from settings import NSPEC_MAX
 import scipy.special as sp
 A_ST=0.3222
@@ -832,38 +833,71 @@ def h2_cool_rate(t):
     Returns:
         cooling rate in erg cm^3 sec^-1
     '''
-    output= - 103.0 + 97.59 * np.log(t) - 48.05 * np.log(t)**2. \
-    + 10.80 * np.log(t)**3. - 0.9032 * np.log(t)**4.
-    return np.exp(output)
+    lt=np.log10(t)
+    output= - 103.0+97.59*lt-48.05*lt**2.+10.80*lt**3.-0.9032*lt**4.
+    return np.exp(output*np.log(10.))
 
-def h2_frac(tvir,z,xe,jlw,delta_c=2000ß):
+def h2_frac(tvir,z,xe,jlw,delta_c=2000.):
     '''
     molecular fraction
     Args:
         tvir, virial temperature of halo
         z, redshift
         xe, electron fraction in IGM
-        jlw, lyman werner flux
+        jlw, lyman werner flux (erg/sec/cm^2)
         delta_c, core overdensity.
     '''
     #July 30th 2018 -- I am here!
-    ne =
-    return
+    chi=YP/4./(1.-YP)
+    th=(COSMO.age(z)*YR*1e9)
+    trec=(xe*clumping_factor(z)*alpha_A(tvir)\
+    *NH0_CM*(1+chi)*(1.+z)**3.*delta_c)**-1.
+    R=np.min([xe,trec/th])
+    ne=delta_c*NH0_CM*(1.+z)**3.*np.sqrt(xe*R)
+    k1=1.4e-18*tvir**0.928*np.exp(-tvir/16200.)
+    GLW=jlw*2.4/1.6e-3/HPLANCK_EV
+    k2=np.max([3.3e-11*GLW,1./th])
+    #print(3.3e-11*GLW)
+    #print(k2)
+    mv=tvir2mvir(tvir,z)
+    rc=0.22/5.*rVir(mv,z)*KPC*1e3*1e2/(1.+z)*LITTLEH #core radius in cm
+    xh2_old=ne*(k1/k2)
+    xh2=xh2_old*.9
+    #print(xh2)
+    #compute self shielding with loop
+    eps=1e-3
+    while np.abs(xh2/xh2_old-1.)>eps:
+        nh2=rc*xh2_old*NH0_CM*(1.+z)**3.*delta_c
+        xh2_old=xh2
+        xh2=ne*(k1/k2)*(1.+nh2/1e14)**.75
+    return np.min([xh2,1.])
 
-
-
-def tau_cool(mvir,z,xe,jlw,delta_c=2000.):
+def tau_cool(tv,z,xe,jlw,delta_c=2000.):
     '''
     cooling time through H2
     Args:
-        mh, halo mass (msolar/h)
+        tv, virial temperature (K)
         z, redshift
         xe, electron fraction
         jlw, lyman-werner background in units of ergs/sec/cm^2
         delta_c, overdensity of gaseous halo core
     '''
-    tv = tvir(mvir,z)
-    nh = NH0*(1.+z)**3.*(1.-xe)
-    xh2 = h2_frac(tv,z,xe,jlw)
-    dcooldt = h2_cool_rate(tvir)
-    return KBOLTZMANN*tv/(delta_c * nh * xh2 * dcooldt )
+    nh = NH0_CM*(1.+z)**3.
+    xh2 = h2_frac(tv,z,xe,jlw,delta_c)
+    dcooldt = h2_cool_rate(tv)
+    #print(dcooldt)
+    return KBOLTZMANN*tv/( delta_c * nh * xh2 * dcooldt )/ERG
+
+def tv_crit(z,xe,jlw):
+    '''
+    compute the critical mass for pop-III star formation
+    given a lyman-werner background jlw and ionized fraction xe
+    Args:
+        z, redshit
+        xe, ionized fraction of H
+        jlw, Lyman-Werner background (erg/cm^2/sec)
+    Returns:
+        critical tvirial (Kelvin) below which H2 cooling is ineffective. 
+    '''
+    g = lambda x: tau_cool(x,z,xe,jlw)/(COSMO.age(z)*1e9*YR)-1.
+    return op.fsolve(g,x0=[1e1])[0]
