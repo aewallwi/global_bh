@@ -104,11 +104,13 @@ def nu(z,m,d=False):
 
 def rho_collapse_analytic(mmin,mmax,z,derivative=False,fractional=False,mode='ShethTormen'):
     assert mode in ['ShethTormen','PressSchechter']
-    if mode == 'ShethTormen':
-        return rho_collapse_st(mmin,mmax,z,derivative=derivative,fractional=fractional)
-    elif mode=='PressSchechter':
-        return rho_collapse_eps(mmin,mmax,z,derivative=derivative,fractional=fractional)
-
+    if mmin<=mmax:
+        if mode == 'ShethTormen':
+            return rho_collapse_st(mmin,mmax,z,derivative=derivative,fractional=fractional)
+        elif mode=='PressSchechter':
+            return rho_collapse_eps(mmin,mmax,z,derivative=derivative,fractional=fractional)
+    else:
+        return 0.
 def rho_collapse_st(mmin,mmax,z,derivative=False,fractional=False):
     '''
     Compute the comoving density of collapse matter or fraction of matter collapsed
@@ -897,7 +899,7 @@ def tv_crit(z,xe,jlw):
         xe, ionized fraction of H
         jlw, Lyman-Werner background (erg/cm^2/sec)
     Returns:
-        critical tvirial (Kelvin) below which H2 cooling is ineffective. 
+        critical tvirial (Kelvin) below which H2 cooling is ineffective.
     '''
     g = lambda x: tau_cool(x,z,xe,jlw)/(COSMO.age(z)*1e9*YR)-1.
     return op.fsolve(g,x0=[1e1])[0]
