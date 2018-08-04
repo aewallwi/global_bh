@@ -903,3 +903,12 @@ def tv_crit(z,xe,jlw):
     '''
     g = lambda x: tau_cool(x,z,xe,jlw)/(COSMO.age(z)*1e9*YR)-1.
     return op.fsolve(g,x0=[1e1])[0]
+
+def tv_crit_v14(z,jlw):
+    '''
+    Compute the critical virial temperature without considering the free-electron
+    fraction produced by X-rays using the fitting formula by Visbal+ 2014
+    '''
+    mc=2.5e5*(1.+6.96*(4*PI*jlw/1e-21)**.47)*((1.+z)/26.)**-1.5
+    mc=mc/LITTLEH
+    return tvir(mc,z)

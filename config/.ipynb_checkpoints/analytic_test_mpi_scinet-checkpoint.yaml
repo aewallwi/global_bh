@@ -1,0 +1,56 @@
+#*************************************************
+#The following parameters are general run settings.
+#*************************************************
+DATAFILE: /home/b/bmg/aaronew/global_bh/tables/bowman_2018.npy #global signal data file
+MPI: False #determine whether to use MPI
+THREADS: 1 #number of threads to run
+NSTEPS: 50000 #number of steps for each sampler
+NWALKERS: 10 #number of MCMC walkers
+OUTPUT_NAME: test_analytic_mpi.npz #name of output file. 
+NPTS_NOISE_EST: 20 #number of points to estimate std from
+MPI: True #set to true if you are using open MPI
+#**************************************************
+#We specify the default values of all model parameters
+#in this section, including the parameters that we are
+#not fitting. The next section specifies the names of
+#parameters to fit.
+#**************************************************
+PARAMS: #this section specifies settings for all model parameters
+    NU0: 80. #Analytic central frequency
+    TAU: 0.  #flatness parameter
+    A:  350. #Amplitude parameter
+    W:  20.  #Width parameter.
+#**************************************************
+#PARAMS2VARY is a list of parameter names that will
+#be fit by the MCMC.
+#**************************************************
+PARAMS2VARY: #specify the names of parameters that will be fitted
+    - NU0
+    - TAU
+    - A
+    - W
+#**************************************************
+#PRIORS specifies prior distributions on our fitting
+#parameters.
+#For each parameter, specify TYPE which can be
+#UNIFORM, GAUSSIAN, or LOGNORMAL
+#For UNIFORM priors, specify MIN and MAX value.
+#For LOGNORMAL or GAUSSIAN priors, specify MEAN, VAR
+#**************************************************
+PRIORS:
+  NU0:
+    TYPE: UNIFORM
+    MIN: 70.
+    MAX: 80.
+  TAU:
+    TYPE: UNIFORM
+    MIN: 0.
+    MAX: 10.
+  A:
+    TYPE: UNIFORM
+    MIN: 0.
+    MAX: 1.
+  W:
+    TYPE: UNIFORM
+    MIN: 1.
+    MAX: 100.

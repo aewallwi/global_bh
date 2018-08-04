@@ -740,7 +740,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
             Jalphas_stars[tnum]=Jalphas_stars[tnum]*DH/aval**2./4./PI\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.*HPLANCK_EV
             dtaus=-dz*(DH*1e3*KPC*1e2)/aval**2./COSMO.Ez(zval)\
-            *(1.-qval)\
+            *np.max([(1.-qval),0.])\
             *((1.-xe)*NH0_CM*sigma_HLike(xrays)\
             +(1.-xe)*NHE0_CM*sigma_HeI(xrays)\
             +xe*NHE0_CM*sigma_HLike(xrays,z=2.))
@@ -845,10 +845,11 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
         T4_HII, temperature of HII regions
         kwargs, dictionary of model parameters.
     '''
+    chi=YP/4./(1.-YP)
     tmax=COSMO.age(zlow)
     tmin=COSMO.age(zhigh)
     taxis=np.linspace(tmin,tmax,ntimes)
-    dt=(taxis[1]-taxis[0])#dt in Gyr
+    delta_t=(taxis[1]-taxis[0])#dt in Gyr
     zaxis=COSMO.age(taxis,inverse=True)
     aaxis=1./(1.+zaxis)
     xray_axis=np.logspace(-1,3,N_INTERP_X)
@@ -857,6 +858,8 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
     Tks=np.zeros(ntimes)
     xes=np.zeros(ntimes)
     q_ion=np.zeros(ntimes)
+    mcrits=np.zeros(ntimes)
+    tcrits=np.zeros(ntimes)
     tau_values=np.zeros(ntimes)
     xalphas=np.zeros(ntimes)
     xcolls=np.zeros(ntimes)
@@ -866,6 +869,7 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
     Jxrays=np.zeros(ntimes)
     Jxrays_stars=np.zeros(ntimes)
     Jlws=np.zeros(ntimes)#lymwan Werner fluxes.
+    Jlws_stars=np.zeros(ntimes)
     jrad=np.zeros(N_INTERP_X)#background 21-cm brightness temperature
     Trads=np.zeros(ntimes)#21-cm background temperature
     Tspins=np.zeros(ntimes)
@@ -875,6 +879,7 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
     rho_bh_s=np.zeros(ntimes)
     drho_coll_dt=np.zeros(ntimes)
     tb=np.zeros(ntimes)
+    tau_fbs=np.zeros(ntimes)
     if diagnostic:
         jx_matrix=[]
         xray_matrix=[]
@@ -889,6 +894,8 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
     rho_bh_q[0]=0.
     mmin,mmax=get_m_minmax(zaxis[0],**kwargs)
     rho_bh_a[0]=rho_collapse_analytic(mmin,mmax,zaxis[0],derivative=False)*COSMO.Ob0/COSMO.Om0*kwargs['FBH']
+    drho_coll_dt[0]=rho_collapse_analytic(mmin,mmax,zaxis[0],derivative=True)\
+    *COSMO.Ob0/COSMO.Om0*kwargs['FBH']
     if verbose: print('Initializing Interpolation.')
     init_interpolation_tables()
     if verbose: print('Starting Evolution at z=%.2f, xe=%.2e, Tk=%.2f'\
@@ -901,6 +908,7 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
         xcoll=xcolls[tnum-1]
         ts=Tspins[tnum-1]
         tcmb=TCMB0/aval
+        q=q_ion[tnum-1]
         xrays=xray_axis*aaxis[0]/aval
         freqs=radio_axis*aaxis[0]/aval
         dz=zaxis[tnum]-zval
@@ -911,40 +919,50 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
         #/COSMO.Ez(x),zval,zmax(zaxis[tnum],n))[0]*pn_alpha(n)\
         #*DH/aval**2./4./PI/(1e3*KPC*1e2)*LITTLEH**3.
             if verbose: print('Incrementing black hole mass density')
-            tcrit=tv_crit(zval,xe,Jlws[tnum-1])
+            if kwargs['TVCRIT_FULL']:
+                tcrit=tv_crit(zval,xe,Jlws[tnum-1]+Jlws_stars[tnum-1])
+            else:
+                tcrit=tv_crit_v14(zval,Jlws[tnum-1]+Jlws_stars[tnum-1])
             mmin,mmax=get_m_minmax(zval,**kwargs)
+            mcrits[tnum]=tvir2mvir(tcrit,zval)
+            tcrits[tnum]=tcrit
             tmin=np.max([tcrit,tvir(mmin,zval),tk])
             mmin=tvir2mvir(tmin,zval)
-            tau_fb=tau_feedback_momentum(mvir=mmin,z=zval,ta=kwargs['TAU_GROW'],
-            fh=kwargs['FBH'],eps=kwargs['EPS'])
-            drho_coll_dt[tnum-1]=rho_collapse_analytic(mmin,mmax,zaxis[0],derivative=True)\
+            if verbose: print('tcrit=%.2e, tmin=%.4e, mmin=%.2e'%(tcrit, tmin,mmin))
+            tau_fb=np.max([tau_feedback_momentum(mvir=mmin,z=zval,ta=kwargs['TAU_GROW'],
+            fh=kwargs['FBH'],eps=kwargs['EPS']),0.])
+            drho_coll_dt[tnum]=rho_collapse_analytic(mmin,mmax,zaxis[tnum],derivative=True)\
             *COSMO.Ob0/COSMO.Om0*kwargs['FBH']
             dbh=drho_coll_dt[tnum-1]+rho_bh_a[tnum-1]/kwargs['TAU_GROW']
             tfb=tval-tau_fb
             #August 2nd 2018: I am here!
             if tfb>=taxis[0]:
-                dbhq=interp.interp1d(taxis[:tnum],drho_coll_dt[:tnum])\
+                dbhq=interp.interp1d(taxis[:tnum+1],drho_coll_dt[:tnum+1])(tfb)\
                 *np.exp(tau_fb/kwargs['TAU_GROW'])
                 dbh=dbh-dbhq
-                rho_bh_q[tnum]=rho_bh_q[tnum-1]+dt*dbhq
-            rho_bh_a[tnum]=rho_bh_a[tnum-1]+dbh*dt
+                rho_bh_q[tnum]=rho_bh_q[tnum-1]+delta_t*dbhq
+            if verbose: print('delta rho bh=%.2e'%(dbh*delta_t))
+            rho_bh_a[tnum]=rho_bh_a[tnum-1]+dbh*delta_t
             rho_bh_s[tnum]=rho_collapse_analytic(mmin,mmax,zval)\
             *COSMO.Ob0/COSMO.Om0*kwargs['FBH']
             splkey=('rho_bh','analytic')+dict2tuple(kwargs)
+            SPLINE_DICT[splkey]={}
             rho_bh_a[rho_bh_a<=0.]=np.exp(-90.)
             rho_bh_q[rho_bh_q<=0.]=np.exp(-90.)
             rho_bh_s[rho_bh_s<=0.]=np.exp(-90.)
             SPLINE_DICT[splkey]['accreting']=\
-            interp.interp1d(taxis[:tnum],np.log(rho_bh_a[:tnum]),
+            interp.interp1d(taxis[:tnum+1],np.log(rho_bh_a[:tnum+1]),
             bounds_error=False,fill_value=-90.)
             SPLINE_DICT[splkey]['quiescent']=\
-            interp.interp1d(taxis[:tnum],np.log(rho_bh_q[:tnum]),
+            interp.interp1d(taxis[:tnum+1],np.log(rho_bh_q[:tnum+1]),
             bounds_error=False,fill_value=-90.)
             SPLINE_DICT[splkey]['total']=\
-            interp.interp1d(taxis[:tnum],np.log(rho_bh_q[:tnum]+rho_bh_a[:tnum]),
+            interp.interp1d(taxis[:tnum+1],np.log(rho_bh_q[:tnum+1]+rho_bh_a[:tnum+1]),
             bounds_error=False,fill_value=-90.)
             SPLINE_DICT[splkey]['seed']=\
-            interp.interp1d(taxis[:tnum],np.log(rho_bh_s[:tnum]),
+            interp.interp1d(taxis[:tnum+1],np.log(rho_bh_s[:tnum+1]),
+            bounds_error=False,fill_value=-90.)
+            if verbose: print('rho_bh_a=%.2e, rho_bh_q=%.2e'%(rho_bh_a[tnum],rho_bh_q[tnum]))
             if verbose: print('Computing Ionized Fraction.')
             zeta_popii=kwargs['F_ESC_POPII']*kwargs['F_STAR_POPII']\
             *kwargs['N_ION_POPII']\
@@ -952,7 +970,7 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
             zeta_popiii=kwargs['F_ESC_POPIII']*kwargs['F_STAR_POPIII']\
             *kwargs['N_ION_POPIII']\
             *4./(4.-3.*YP)
-            rec_term=q*clumping_factor(zval)*alpha_A(T4)\
+            rec_term=q*clumping_factor(zval)*alpha_A(1.)\
             *NH0_CM*(1+chi)*(1.+zval)**3.*1e9*YR
             dq=-rec_term
             dq=dq+zeta_popii*rho_stellar(zval,pop='II',mode='derivative',
@@ -961,11 +979,11 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
             fractional=True,**kwargs)
             dq=dq+ndot_uv(zval,**kwargs)/NH0
             q_ion[tnum]=q_ion[tnum-1]
-            if q_ion[tnum-1]<=1.:
-                q_ion[tnum]+=dq*dt
-            dtau=DH*1e3*KPC*1e2*NH0_CM*SIGMAT*(1.+zv)**2./COSMO.Ez(zv)*\
+            if q_ion[tnum-1]<=1. or dq<0.:
+                q_ion[tnum]+=dq*delta_t
+            dtau=DH*1e3*KPC*1e2*NH0_CM*SIGMAT*(1.+zval)**2./COSMO.Ez(zval)*\
             q_ion[tnum-1]*(1.+chi)*dz
-            tau_values[tnum]=tau_valuse[tnum-1]+dtau
+            tau_values[tnum]=tau_values[tnum-1]+dtau
             if verbose: print('Computing Ly-alpha flux')
             if kwargs['MULTIPROCESS']:
                 if verbose: print('computing AGN Ly-Alpha')
@@ -987,19 +1005,26 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
                         +Jalpha_summand(n,zaxis[tnum],mode='stars',
                         pop=pop,**kwargs)
             #kwargs['ALPHA_FACTOR']\
-            Jlws[tnum]=4e-2*DH/aaxis[tnum]**3./COSMO.Ez(zaxis[tnum])/4./PI\
-            /(1e3*KPC*1e2)**2.*LITTLEH**3.*emissivity_uv(zaxis[tnum],12.4)
+            Jlws[tnum]=4e-2*DH/aaxis[tnum]**3./COSMO.Ez(zaxis[tnum-1])/4./PI\
+            /(1e3*KPC*1e2)**2.*LITTLEH**3.*emissivity_uv(zaxis[tnum-1],12.4,obscured=False,**kwargs)
+            Jlws_stars[tnum]=4e-2*DH/aaxis[tnum-1]**3./COSMO.Ez(zaxis[tnum-1])/4./PI\
+            /(1e3*KPC*1e2)**2.*LITTLEH**3.*\
+            (ndot_uv_stars(zaxis[tnum-1],obscured=False,pop='II',**kwargs)+ndot_uv_stars(zaxis[tnum-1],pop='III',obscured=False,**kwargs)\
+            )*12.4/2.4/1e9/YR
             #convert from ev/sec/ev/cm^2/sr to ev/sec/hz/cm^2/sr
             Jlws[tnum]*=HPLANCK_EV
+            Jlws_stars[tnum]*=HPLANCK_EV
             #convert frmo ev/sec/Hz/cm^2/sr to erg/hz/cm^2/sr
             Jlws[tnum]*=EV/ERG
+            Jlws_stars[tnum]*=EV/ERG
+            if verbose: print('jlw=%.2e,jlw*=%.2e'%(Jlws[tnum],Jlws_stars[tnum]))
             Jalphas[tnum]=1.\
             *Jalphas[tnum]*DH/aval**2./4./PI\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.*HPLANCK_EV
             Jalphas_stars[tnum]=Jalphas_stars[tnum]*DH/aval**2./4./PI\
             /(1e3*KPC*1e2)**2.*LITTLEH**3.*HPLANCK_EV
             dtaus=-dz*(DH*1e3*KPC*1e2)/aval**2./COSMO.Ez(zval)\
-            *(1.-qval)\
+            *np.max([(1.-qval),0.])\
             *((1.-xe)*NH0_CM*sigma_HLike(xrays)\
             +(1.-xe)*NHE0_CM*sigma_HeI(xrays)\
             +xe*NHE0_CM*sigma_HLike(xrays,z=2.))
@@ -1081,7 +1106,7 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
     'rho_bh_s':rho_bh(zaxis,quantity='seed',**kwargs),
     'rb_obs':np.vstack([faxis_rb,tradio_obs]).T,
     'ex_obs':np.vstack([eaxis_xb,jx_obs]).T,
-    'tau_ion_vals':tau_values}
+    'tau_ion_vals':tau_values,'Jlws':Jlws,'Jlws_stars':Jlws_stars,'mcrits':mcrits,'tcrits':tcrits}
     if diagnostic:
         output['jxs']=np.array(jx_matrix)
         output['xrays']=np.array(xray_matrix)
@@ -1126,6 +1151,7 @@ class GlobalSignal():
         self.param_vals['COMPUTE_FEEDBACK']=self.config['COMPUTE_FEEDBACK']
         self.param_vals['LW_FEEDBACK']=self.config['LW_FEEDBACK']
         self.param_vals['COMPUTEBACKGROUNDS']=self.config['COMPUTEBACKGROUNDS']
+        if 'TVCRIT_FULL' in self.config: self.param_vals['TVCRIT_FULL']=self.config['TVCRIT_FULL']
         self.param_history={}#dictionary of parameters for each run
         self.global_signals={}#dictionary of global signal files for each run
         self.run_dates=[]
@@ -1154,12 +1180,16 @@ class GlobalSignal():
         else:
             self.param_vals[key]=self.param_vals[key]*10.**dvalue
         self.param_history.append(copy.deepcopy(self.param_vals))
-    def calculate_global(self):
+    def calculate_global(self,verbose=False):
         rundate=str(datetime.datetime.now())
         self.run_dates.append(rundate)
-        self.global_signals[rundate]=delta_Tb(\
+        if self.config['LW_FEEDBACK']:
+            dtbfunc=delta_Tb_feedback
+        else:
+            dtbfunc=delta_Tb
+        self.global_signals[rundate]=dtbfunc(\
         zlow=self.config['ZLOW'],zhigh=self.config['ZHIGH'],
-        ntimes=self.param_vals['NTIMESGLOBAL'],**self.param_vals,diagnostic=True)
+        ntimes=self.param_vals['NTIMESGLOBAL'],**self.param_vals,diagnostic=True,verbose=verbose)
         self.param_history[rundate]=copy.deepcopy(self.param_vals)
     def save_to_disk(self):
         hf = h5py.File(self.config['OUTPUTNAME']+'.h5', 'w')
