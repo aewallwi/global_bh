@@ -13,6 +13,7 @@ CONFIG:
   OUTPUTNAME: fiducial_stellar_model
   COMPUTE_FEEDBACK: False
   LW_FEEDBACK: False
+  F_ESC_FROM_LOGN: False
 PARAMS:
   EPS:
     TYPE: FLOAT
