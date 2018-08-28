@@ -397,7 +397,19 @@ def emissivity_uv(z,E_uv,mode='energy',obscured=True,**kwargs):
         if mode=='number':
             output=output/E_uv
         if obscured:
-            output=output*kwargs['F_ESC']
+            esc_key = ('UV','F_ESC')+dict2tuple(kwargs)
+            if not esc_key in SPLINE_DICT:
+                print(kwargs['F_ESC_FROM_LOGN'])
+                if kwargs['F_ESC_FROM_LOGN']:
+                    g=lambda x: emissivity_uv(z,x,mode='energy',obscured=False,**kwargs)\
+                    *np.exp(-10.**kwargs['LOG10_N']\
+                    *(F_H*sigma_HLike(x)+F_HE/F_H*sigma_HeI(x)))
+                    h=lambda x: emissivity_uv(z,x,mode='energy',obscured=False,**kwargs)
+                    SPLINE_DICT[esc_key] = integrate.quad(g,13.6e-3,24.59e-3)[0]/integrate.quad(h,13.6e-3,24.59e-3)[0]
+                else:
+                    SPLINE_DICT[esc_key]=kwargs['F_ESC']
+            print(SPLINE_DICT[esc_key])
+            output=output*SPLINE_DICT[esc_key]
     else:
         output=0.
     return output
@@ -484,7 +496,7 @@ def brightness_temperature(z,freq,**kwargs):
     return background_intensity(z,freq,mode='radio',**kwargs)*(C*1e3/freq)**2.\
     /2./KBOLTZMANN
 
-def ndot_uv(z,E_low=13.6,E_high=13.6e3,**kwargs):
+def ndot_uv(z,E_low=13.6,E_high=24.6,**kwargs):
     '''
     number of photons per Gyr per (h/Mpc)^3 at redshift z
     emitted between E_low and E_high
@@ -1127,6 +1139,7 @@ class GlobalSignal():
         Args:
             config_file: string pointing to .yaml file with model parameters
         '''
+        SPLINE_DICT = {}
         self.config_file=config_file
         with open(config_file,'r') as yamlfile:
             yamldict=yaml.load(yamlfile)
@@ -1151,7 +1164,13 @@ class GlobalSignal():
         self.param_vals['COMPUTE_FEEDBACK']=self.config['COMPUTE_FEEDBACK']
         self.param_vals['LW_FEEDBACK']=self.config['LW_FEEDBACK']
         self.param_vals['COMPUTEBACKGROUNDS']=self.config['COMPUTEBACKGROUNDS']
-        if 'TVCRIT_FULL' in self.config: self.param_vals['TVCRIT_FULL']=self.config['TVCRIT_FULL']
+        if 'TVCRIT_FULL' not in self.config:
+            self.config['TVCRIT_FULL']=False
+        self.param_vals['TVCRIT_FULL']=self.config['TVCRIT_FULL']
+
+        #if 'F_ESC_FROM_LOGN' not in self.config:
+        #    self.config['F_ESC_FROM_LOGN']=False
+        self.param_vals['F_ESC_FROM_LOGN']=self.config['F_ESC_FROM_LOGN']
         self.param_history={}#dictionary of parameters for each run
         self.global_signals={}#dictionary of global signal files for each run
         self.run_dates=[]
