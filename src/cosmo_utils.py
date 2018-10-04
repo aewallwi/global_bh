@@ -76,12 +76,19 @@ def bias(mvir,z,mode='tinker10',mdef='200m'):
     return col_bias.haloBias(mvir, model = 'tinker10', z = z,mdef=mdef)
 
 
-def sigma(m,z):
+def sigma(m,z,derivative = False):
     '''
     sigma for tophat filtered density field at mass m.
+    Args:
+        mass, (msol/h)
+        z, redshift
+        derivative, if true, return - d ln \sigma / dm
     '''
     r=(3./4./PI*m/COSMO.rho_m(0.))**(1./3.)/1e3
-    return COSMO.sigma(r,z)
+    if not derivative:
+        return COSMO.sigma(r,z)
+    else:
+        return -1./3.*COSMO.sigma(r,z,derivative=True) * m**-1.
 
 def nu(z,m,d=False):
     '''
@@ -102,16 +109,17 @@ def nu(z,m,d=False):
     #print('nu=%.2e'%output)
     return output
 
-def rho_collapse_analytic(mmin,mmax,z,derivative=False,fractional=False,mode='ShethTormen'):
+def rho_collapse_analytic(mmin,mmax,z,derivative=False,fractional=False,mode='ShethTormen', number = False):
     assert mode in ['ShethTormen','PressSchechter']
     if mmin<=mmax:
         if mode == 'ShethTormen':
-            return rho_collapse_st(mmin,mmax,z,derivative=derivative,fractional=fractional)
+            return rho_collapse_st(mmin,mmax,z,derivative=derivative,fractional=fractional, number = number)
         elif mode=='PressSchechter':
+            assert not number
             return rho_collapse_eps(mmin,mmax,z,derivative=derivative,fractional=fractional)
     else:
         return 0.
-def rho_collapse_st(mmin,mmax,z,derivative=False,fractional=False):
+def rho_collapse_st(mmin,mmax,z,derivative=False,fractional=False, number = False):
     '''
     Compute the comoving density of collapse matter or fraction of matter collapsed
     in halos between mass mmin and mmax at redshift z \
@@ -123,19 +131,33 @@ def rho_collapse_st(mmin,mmax,z,derivative=False,fractional=False):
         derivative, if tru return derivative with respect to time in Gyr^-1
         fractional, if true, return fraction of density in halos, if false,
                     return comoving density in halos.
+        number, if true, return number of halos between mmin and mmax. Currently
+                only support derivative mode.
     '''
+    assert not(fractional and number)
     nmax=nu(z,mmax)
     nmin=nu(z,mmin)
     if not derivative:
-        output=-sp.erf(B_ST**.5*nmin)-2.**(-P_ST)\
-        *sp.gamma(.5-P_ST)*sp.gammainc(.5-P_ST,B_ST*nmin**2.)
-        output=output+sp.erf(B_ST**.5*nmax)+2.**(-P_ST)\
-        *sp.gamma(.5-P_ST)*sp.gammainc(.5-P_ST,B_ST*nmax**2.)
-        output*=A_ST
+        if not number:
+            output=-sp.erf(B_ST**.5*nmin)-2.**(-P_ST)\
+            *sp.gamma(.5-P_ST)*sp.gammainc(.5-P_ST,B_ST*nmin**2.)
+            output=output+sp.erf(B_ST**.5*nmax)+2.**(-P_ST)\
+            *sp.gamma(.5-P_ST)*sp.gammainc(.5-P_ST,B_ST*nmax**2.)
+            output*=A_ST
+        else:
+            limlow = np.log(mmin)
+            limhigh = np.log(mmax)
+            g = lambda x: 2.*A_ST*np.sqrt(B_ST/PI)*(1.+(nu(z,np.exp(x))**-2./2./B_ST)**P_ST\
+            * nu(z,np.exp(x)) * np.exp(- nu(z,np.exp(x))**2.*B_ST) * COSMO.sigma(np.exp(x), z, derivative = True)
+            return integrate.quad(g,limlow,limhigh)[0]
     else:
         dzdt=-COSMO.Ez(z)*(1.+z)/TH
-        output=2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(B_ST*nmax)**-2.)**P_ST)*nmax*np.exp(-nmax**2.*B_ST)
-        output=output-2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(B_ST*nmin)**-2.)**P_ST)*nmin*np.exp(-nmin**2.*B_ST)
+        upper=2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(B_ST*nmax)**-2.)**P_ST)*nmax*np.exp(-nmax**2.*B_ST)
+        lower=-2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(B_ST*nmin)**-2.)**P_ST)*nmin*np.exp(-nmin**2.*B_ST)
+        if number:
+            upper/=mmin
+            lower/=mmax
+        output=upper - lower
         output=output*-COSMO.growthFactor(z,derivative=True)\
         /COSMO.growthFactor(z)*dzdt
     if not fractional:

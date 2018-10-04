@@ -137,7 +137,7 @@ PARAMS:
   #Radio parameters
   FLOUD: #Fraction of black holes that are radio loud
     TYPE: FLOAT
-    P0: 0.3
+    P0: 0.15
   R_MEAN: #Mean of radio loudness distribution
     TYPE: FLOAT
     P0: 2.8
