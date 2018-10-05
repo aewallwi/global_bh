@@ -132,10 +132,11 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
         t_seed_max=COSMO.age(kwargs['Z_SEED_MIN'])
         rho_bh_accreting=np.zeros_like(taxis)
         rho_bh_quiescent=np.zeros_like(taxis)
+        rho_bh_seeds=np.zeros_like(taxis)
         dt=taxis[1]-taxis[0]
         qlist=['accreting','quiescent']
         t0list=[taxis[0],taxis[0]+kwargs['TAU_FEEDBACK']]
-        if kwargs['SEEDMETHOD'] == 'PROPORTIONAL':
+        if kwargs['SEEDMETHOD'] == 'FIXEDRATIO':
             #define integrand to compute accreting black hole density
             def bh_accreting_integrand(t,y):
                 zval=COSMO.age(t,inverse=True)
@@ -190,6 +191,7 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
                     integrator.integrate(integrator.t+dt)
                     y[tnum]=integrator.y[0]
                     tnum+=1
+                print(y)
                 y[y<=0]=np.exp(-90.)
                 if quant=='accreting':
                     y[taxis>=COSMO.age(kwargs['Z_SEED_MIN'])\
@@ -218,27 +220,45 @@ def rho_bh_analytic(z,quantity='accreting',verbose=False,**kwargs):
         elif kwargs['SEEDMETHOD'] == 'FIXEDMASS':
             mbh_min = kwargs['MSEED']
             mbh_max = mbh_min * np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_GROW'])
+            tmin = COSMO.age(kwargs['Z_SEED_MIN'])
             for tnum,tval in enumerate(taxis):
                 #compute bh_accreting
                 def accreting_integrand(mbh):
-                    zv = COSMO.age(tval - kwargs['TAU_GROW']*np.log(mbh/mbh_min),inverse=True)
-                    mmin,mmax=get_m_minmax(zv,**kwargs)
-                    return rho_collapse_st(mmin, mmax, zv, number = True, derivative=True, **kwargs) * mbh_min
-                rho_bh_accreting[tnum] =  integrate.quad(accreting_integrand,mbh_min,mbh_max)[0]
+                    tv = tval - kwargs['TAU_GROW']*np.log(mbh/mbh_min)
+                    if tv>1.35e-3 and tv <= tmin:
+                        zv = COSMO.age(tv,inverse=True)
+                        mmin,mmax=get_m_minmax(zv,**kwargs)
+                        return rho_collapse_st(mmin, mmax, zv, number = True, derivative=True)
+                    else:
+                        return 0.
+                rho_bh_accreting[tnum] =  integrate.quad(accreting_integrand,mbh_min,mbh_max)[0]\
+                * kwargs['FHALO'] * kwargs['TAU_GROW']
                 #compute quiescent density
-                rho_bh_quiescent[tnum] = rho_collapse_st(mmin,mmax,COSMO.age(tval - kwargs['TAU_FEEDBACK']), number = True)\
-                * mbh_min * np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_GROW'])
+                zval = COSMO.age(tval,inverse=True)
+                tfb = tval - kwargs['TAU_FEEDBACK']
+                if tfb > 1.35e-3:
+                    zfb = np.max([COSMO.age(tfb,inverse=True),kwargs['Z_SEED_MIN']])
+                    mmin,mmax=get_m_minmax(zfb,**kwargs)
+                    rho_bh_quiescent[tnum] = rho_collapse_st(mmin,mmax,zfb, number = True)\
+                    * mbh_max * kwargs['FHALO']
+                else:
+                    rho_bh_quiescent[tnum] = 0.
                 #compute seed density
-                rho_bh_seeds[tnum] = mbh_min * rho_collapse_st(mmin,mmax,COSMO.age(tval),number=True)
+                mmin,mmax=get_m_minmax(zval,**kwargs)
+                rho_bh_seeds[tnum] = mbh_min * rho_collapse_st(mmin,mmax,
+                COSMO.age(tval,inverse=True),number=True) * kwargs['FHALO']
+            #print(rho_bh_seeds)
+            #print(rho_bh_accreting)
+            #print(rho_bh_quiescent)
             rho_bh_seeds[rho_bh_seeds<=0.] = np.exp(-90)
             rho_bh_quiescent[rho_bh_quiescent<=0.] = np.exp(-90.)
             rho_bh_accreting[rho_bh_accreting<=0.] = np.exp(-90.)
-
+            SPLINE_DICT[splkey] = {}
             SPLINE_DICT[splkey]['seed'] = interp.interp1d(taxis,np.log(rho_bh_seeds),bounds_error=False,fill_value=-90.)
             SPLINE_DICT[splkey]['accreting'] = interp.interp1d(taxis,np.log(rho_bh_accreting),bounds_error=False,fill_value=-90.)
             SPLINE_DICT[splkey]['quiescent'] = interp.interp1d(taxis,np.log(rho_bh_quiescent),bounds_error=False,fill_value=-90.)
             SPLINE_DICT[splkey]['total'] = interp.interp1d(taxis,np.log(rho_bh_accreting + rho_bh_quiescent),bounds_error=False,fill_value=-90.)
-            
+
     return np.exp(SPLINE_DICT[splkey][quantity]\
     (COSMO.age(z)-kwargs['TAU_DELAY']))
 
