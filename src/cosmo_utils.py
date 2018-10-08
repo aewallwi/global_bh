@@ -84,6 +84,7 @@ def sigma(m,z,derivative = False):
         z, redshift
         derivative, if true, return - d ln \sigma / dm
     '''
+    #print('m=%.2e'%m)
     r=(3./4./PI*m/COSMO.rho_m(0.))**(1./3.)/1e3
     if not derivative:
         return COSMO.sigma(r,z)
@@ -147,21 +148,28 @@ def rho_collapse_st(mmin,mmax,z,derivative=False,fractional=False, number = Fals
         else:
             limlow = np.log(mmin)
             limhigh = np.log(mmax)
-            g = lambda x: 2.*A_ST*np.sqrt(B_ST/PI)*(1.+(nu(z,np.exp(x))**-2./2./B_ST)**P_ST\
-            * nu(z,np.exp(x)) * np.exp(- nu(z,np.exp(x))**2.*B_ST) * COSMO.sigma(np.exp(x), z, derivative = True)
-            return integrate.quad(g,limlow,limhigh)[0]
+            g = lambda x: 2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*nu(z,np.exp(x))**-2./B_ST)**P_ST)\
+            * nu(z,np.exp(x)) * np.exp(- nu(z,np.exp(x))**2.*B_ST) * sigma(np.exp(x), z, derivative = True)
+            output = integrate.quad(g,limlow,limhigh)[0]
+
     else:
         dzdt=-COSMO.Ez(z)*(1.+z)/TH
-        upper=2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(B_ST*nmax)**-2.)**P_ST)*nmax*np.exp(-nmax**2.*B_ST)
-        lower=-2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(B_ST*nmin)**-2.)**P_ST)*nmin*np.exp(-nmin**2.*B_ST)
+        upper=2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(nmax)**-2./B_ST)**P_ST)*nmax*np.exp(-nmax**2.*B_ST)
+        lower=2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(nmin)**-2./B_ST)**P_ST)*nmin*np.exp(-nmin**2.*B_ST)
+        upper = upper * ( - COSMO.growthFactor(z,derivative=True)/COSMO.growthFactor(z) + sigma(mmax,z,derivative=True)\
+                           *-1.5*mmax/(1.+z))
+        lower = lower * ( - COSMO.growthFactor(z,derivative=True)/COSMO.growthFactor(z) + sigma(mmin,z,derivative=True)\
+                           *-1.5*mmin/(1.+z))
         if number:
-            upper/=mmin
-            lower/=mmax
+            upper = upper/mmax
+            lower = lower/mmin
+
         output=upper - lower
-        output=output*-COSMO.growthFactor(z,derivative=True)\
-        /COSMO.growthFactor(z)*dzdt
+        output=output*dzdt
+
+
     if not fractional:
-        output=COSMO.rho_m(0.)*1e9*output
+        output = COSMO.rho_m(0.)*1e9*output
     return output
 
 
