@@ -942,3 +942,122 @@ def tv_crit_v14(z,jlw):
     mc=2.5e5*(1.+6.96*(4*PI*jlw/1e-21)**.47)*((1.+z)/26.)**-1.5
     mc=mc/LITTLEH
     return tvir(mc,z)
+
+
+    def gamma_c(tg,nmax=20, gff = 1.1, gfb = lambda x: 1.05):
+        '''
+        continuum emission coefficient from free-free and
+        bound-free electron collisions (Fernandez 2006)
+        Args:
+            tg, gas temperature (Kelvin)
+            nmax, number of bound-free terms in sum include (default = 20)
+            gff, free-free gaunt factor
+            gfb, bound-free gaunt factor.
+        Returns:
+            continuum emission coefficient (keV K^1/2 cm^3)
+        '''
+        nvals = np.arange(2,nmax+1)
+        xvals = (EH/(KBKEV*tg*nvals**2.))
+        output = 5.44e-39 * ( gff + np.sum(gfb(nvals)*np.exp(xvals)*xvals/nvals ))
+        #convert from ergs to kev
+        return output / 1.60218e-9
+
+
+
+def labs_over_q(**kwargs):
+    '''
+    determine the ratio between the absorbed luminosity and rate of ionizing photon
+    production
+    Args:
+        dictionary with parameters determining emission spectrum
+    Returns:
+        L_abs/Q_H (keV)
+    '''
+    eabs = lambda x: np.exp(-10.**kwargs['LOG10_N']*(F_H*sigma_HLike(x)\
+            +F_HE/F_H*sigma_HeI(x)))
+    g = lambda x: (x/.2)**(-kwargs['ALPHA_X'])*np.exp(-x/kwargs['ECUT'])*(1.-eabs(x))
+    h = lambda x: (x/.2)**(-kwargs['ALPHA_O2'])*(1.-eabs(x))
+
+    j = lambda x: (1. + .3*(x/EH-1.))*g(x)/x
+    k = lambda x: h(x)/x
+    output = integrate.quad(g,.2,np.inf)[0] + integrate.quad(h,EH,.2)[0]
+    output = output/(integrate.quad(k,EH,.2)[0]+integrate.quad(j,.2,np.inf)[0])
+    return output
+
+
+
+
+
+
+def p_lya(y):
+    '''
+    probability distribution of 2-photon lyman-alpha emission (Fernandez 2006)
+    Args:
+        y = \nu / \nu_\alpha
+    Returns:
+        p(y) [units of dimensionless y^-1], \int_0^1 p(y) ~ 1
+    '''
+    return 1.307 - 2.627 * (y - .5)**2. + 2.563 * (y-.5)**4. -51.69 * (y-.5)**6.
+
+coeffs_lt = {'2p':np.array([3.435e-1,1.297e-5,2.178e-12,7.928e-17]),
+             '3s':np.array([6.25e-2,-1.299e-6,2.666e-11,3.973e-16]),
+             '3d':np.array([5.03e-2,7.514e-7,-2.826e-13,-1.098e-17])}
+coeffs_ht = {'2p':np.array([3.162e-1,1.472e-5,-8.275e-12,-9.794e-19]),
+             '3s':np.array([3.337e-2,2.223e-7,-2.794e-13,-1.29e-18]),
+             '3d':np.array([5.051e-2,7.876e-7,2.072e-12,1.902e-18])}
+degeneracies = {'2p': 6, '3s': 2,'3d': 10}
+
+def qcoll(transition,tg):
+    '''
+    collisional excitation coefficient from hydrogen ground
+    (Cantalupo,Porciani, Lilly. 2006)
+    Args:
+        transition: excited electron state (2p, 2s, 3d)
+        tg, gas temperature (K)
+    Returns:
+        collisional excitation coefficient in cm^3 s^-1
+    '''
+    g = degeneracies[transition]
+    n = float(transition[0])
+    if tg > 5e4: coeffs = coeffs_ht[transition]
+    else: coeffs = coeffs_lt[transition]
+    gamma = np.dot(coeffs,tg**np.arange(4))
+    return 8.629e-6*gamma/g/tg**.5*np.exp(RY_KEV*(1.-1./n**2.)/KBOLTZMANN_KEV/tg)
+
+def c_coll(tg):
+    '''
+    collisional excitation rates from ground summed over dominant excited states
+    (Cantalupo,Porciani, Lilly. 2006)
+    Args:
+        tg, gas temperature
+    Returns:
+        sum of excitation rates from Hydrogen ground state (cm^3 s^-1). Sum
+        is approximated by first few dominant terms.
+    '''
+    return qcoll('2p',tg) + qcoll('3s',tg) + qcoll('3d',tg)
+
+
+def solve_t(**kwargs):
+    '''
+    find equilibrium temperature of a nebula around black hole by
+    setting emission luminosity in IR equal to absorbed energy
+    Args:
+        spectral parameters
+    Returns:
+        equilibrium temperature of nebular gas.
+    '''
+    splkey = dict2tuple(kwargs)+('temperature',0)
+    if not splkey in SPLINE_DICT:
+        loq = labs_over_q(**kwargs)
+        g = lambda t: KBOLTZMANN_KEV*t*4.*np.pi*gamma_c(t)/t**.5/alpha_B(t)/HPLANCK_KEV + 2.*HPLANCK_KEV*RY_KEV*(1-.25)*.53*(1.+(1.-.5)/.5*c_coll(t)/alpha_b(t)) - loq
+        #find root
+        h = lambda t: KBOLTZMANN_KEV*t**.5*4.*np.pi*gamma_c(t)/alpha_B(t)/HPLANCK_KEV
+        f = lambda t: 2.*HPLANCK_KEV*RY_KEV*(1-.25)*.53*(1.+(1.-.5)/.5*c_coll(t)/alpha_b(t))
+        #plt.plot(np.logspace(3,5,100),(np.vectorize(g)(np.logspace(3,5,100))),ls='--',color='k')
+        #plt.plot(np.logspace(3,5,100),np.abs(np.vectorize(h)(np.logspace(3,5,100))),ls='--',color='r')
+        #plt.plot(np.logspace(3,5,100),np.abs(np.vectorize(f)(np.logspace(3,5,100))),ls='--',color='orange')
+        #plt.yscale('log')
+        #plt.grid()
+        #plt.xscale('log')
+        SPLINE_DICT[splkey] = op.fsolve(lambda x: g(x),x0=[1e3])[0]
+    return SPLINE_DICT[splkey]

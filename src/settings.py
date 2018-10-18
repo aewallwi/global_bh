@@ -96,3 +96,4 @@ LY_N_ALPHA_SWITCH={0:1.,
                    #as Ly-alpha photons.
 POP_II_ION=4361
 POP_III_ION=44021
+RY_KEV= 13.6e-3

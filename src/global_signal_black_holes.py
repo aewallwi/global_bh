@@ -239,18 +239,17 @@ def rho_bh_analytic(z, quantity='accreting',verbose=False, dt = 1e-3, derivative
                 #compute bh_accreting
                 def accreting_integrand(mbh):
                     tv = tval - kwargs['TAU_GROW']*np.log(mbh/mbh_min)
-                    if tv>1.35e-3 and tv <= tmin:
+                    if tv-dt>1.35e-3 and tv+dt <= tmin:
                         #zv = COSMO.age(tv,inverse=True)
                         #mmin,mmax=get_m_minmax(zv,**kwargs)
                         #if d_analytic:
                         #    return rho_collapse_st(mmin, mmax, zv, number = True, derivative=True)
                         #else:
                         return (np.exp(SPLINE_DICT[splkey]['number'](tv+dt))-np.exp(SPLINE_DICT[splkey]['number'](tv-dt)))/(2.*dt)
-
                     else:
                         return 0.
                 rho_bh_accreting[tnum] =  integrate.quad(accreting_integrand,mbh_min,mbh_max)[0]\
-                * kwargs['FHALO'] * kwargs['TAU_GROW']
+                * kwargs['TAU_GROW']
                 #compute quiescent density
                 zval = COSMO.age(tval,inverse=True)
                 tfb = np.min([tval - kwargs['TAU_FEEDBACK'],COSMO.age(kwargs['Z_SEED_MIN'])])
@@ -279,9 +278,12 @@ def rho_bh_analytic(z, quantity='accreting',verbose=False, dt = 1e-3, derivative
         (COSMO.age(z)-kwargs['TAU_DELAY']))
     else:
         t = COSMO.age(z)
-        return (np.exp(SPLINE_DICT[splkey][quantity]\
-        (COSMO.age(z)+dt-kwargs['TAU_DELAY'])) - np.exp(SPLINE_DICT[splkey][quantity]\
-        (COSMO.age(z)-dt-kwargs['TAU_DELAY'])))/(2.*dt)
+        if quantity == 'number' and t+dt > COSMO.age(kwargs['Z_SEED_MIN']):
+            return 0.
+        else:
+            return (np.exp(SPLINE_DICT[splkey][quantity]\
+            (COSMO.age(z)+dt-kwargs['TAU_DELAY'])) - np.exp(SPLINE_DICT[splkey][quantity]\
+            (COSMO.age(z)-dt-kwargs['TAU_DELAY'])))/(2.*dt)
 
 def rho_bh_runge_kutta(z,quantity='accreting',verbose=False,**kwargs):
     splkey=('rho_bh','rk')+dict2tuple(kwargs)
@@ -436,6 +438,40 @@ def emissivity_xrays(z,E_x,obscured=True,**kwargs):
     else:
         return 0.
 
+def q_h(**kwargs):
+    '''
+    absorbed ionizing photons per cubic megaparsec.
+    (sec^-1) Yue 2013.
+    '''
+    splkey = ('absorbed_ionizations',1)+dict2tuple(kwargs)
+    if not splkey in SPLINE_DICT:
+        g = lambda x: x**(-kwargs['ALPHA_X'])*np.exp(-x/300.)*(1.-eabs(x))
+        h = lambda x: x**(-kwargs['ALPHA_O2'])*(1.-eabs(x))
+        j = lambda x: (1. + .3*(x/RY_KEV-1.))*g(x)/x
+        k = lambda x: h(x)/x
+        q_u = integrate.quad(k,RY_KEV,.2)[0]+integrate.quad(j,.2,np.inf)[0]
+        q_norm = q_u * emissivity_xrays(z,1.,obscured=False,**kwargs)
+        SPLINE_DICT[splkey] = q_norm
+    return SPLINE_DICT[splkey]
+
+def emissivity_uv_reprocessed(z,E_uv,**kwargs):
+    '''
+    emissivity in UV-photons from the reprocessed emission from accreting
+    black holes at redshift z
+    in (eV)/sec/eV/(h/Mpc)^3
+    Args:
+        z, redshift
+        E_uv, energy of uv photon (eV)
+        kwargs, model parameter dictionary
+    '''
+    tg = solve_t(**kwargs)
+    E_kev = E_uv / 1e3
+    output = q_h(**kwargs) * (4.*PI*gamma_c(tg)/tg**.5/alpha_B(tg)\
+    * np.exp(E_kev/KBOLTZMANN_KEV/tg)\
+    + 2.*HPLANCK_KEV*(E_kev/RY_KEV/.75)*p_lya(E_kev/RY_KEV/.75)\
+    * (1.+(1-.5)/.5*c_coll(tg)/alpha_B(tg)))
+    return output/HPLANCK_KEV
+
 def emissivity_uv(z,E_uv,mode='energy',obscured=True,**kwargs):
     '''
     emissivity in UV-photons from accreting black holes at redshift z
@@ -463,12 +499,10 @@ def emissivity_uv(z,E_uv,mode='energy',obscured=True,**kwargs):
             output=output*(E_uv/13.6)**(-kwargs['ALPHA_O1'])
         #*(E_uv/13.6)**(-kwargs['ALPHA_O1']*np.imag(power_select)-kwargs['ALPHA_O2']\
         #*(np.real(power_select)))
-        if mode=='number':
-            output=output/E_uv
         if obscured:
             esc_key = ('UV','F_ESC')+dict2tuple(kwargs)
             if not esc_key in SPLINE_DICT:
-                print(kwargs['F_ESC_FROM_LOGN'])
+                #print(kwargs['F_ESC_FROM_LOGN'])
                 if kwargs['F_ESC_FROM_LOGN']:
                     g=lambda x: emissivity_uv(z,x,mode='energy',obscured=False,**kwargs)\
                     *np.exp(-10.**kwargs['LOG10_N']\
@@ -477,8 +511,13 @@ def emissivity_uv(z,E_uv,mode='energy',obscured=True,**kwargs):
                     SPLINE_DICT[esc_key] = integrate.quad(g,13.6e-3,24.59e-3)[0]/integrate.quad(h,13.6e-3,24.59e-3)[0]
                 else:
                     SPLINE_DICT[esc_key]=kwargs['F_ESC']
-            print(SPLINE_DICT[esc_key])
+            #print(SPLINE_DICT[esc_key])
             output=output*SPLINE_DICT[esc_key]
+        if kwargs['INCLUDE_REPROCESSED'] and E_uv < 13.6:
+            output = output + emissivity_uv_reprocessed(z,E_uv,**kwargs)
+
+        if mode=='number':
+            output=output/E_uv
     else:
         output=0.
     return output
@@ -718,25 +757,27 @@ def s2m(sjy,freq_obs,fhalo,**kwargs):
 
     '''
 
-def dn_ds_domega(sjy,freq_obs,fhalo,**kwargs):
+def dn_ds_domega(sjy,freq_obs,**kwargs):
     '''
     Compute differential number of sources per flux bin
     '''
     assert kwargs['SEEDMETHOD'] == 'FIXEDMASS'
-    s_mks = sjy/JY #convert Jy to SI units.
-    s2m = lambda s,z:  s*4.*PI*COSMO.luminosityDistance(z)**2.*(1+z)**(-kwargs['ALPHA_R']-1.)\
-    *(emissivity_radio(z,freq_obs*(1.+z),**kwargs)/rho_bh_analytic(z,**kwargs))**-1. \
-    * (1e3*KPC/LITTLEH)**2. #from (Mpc/h)^2 to meter^2
-    dvc = lambda z: 4.*PI*DH*COSMO.angularDiameterDistance(z)**2./ COSMO.Ez(z)
+    s_mks = sjy*JY #convert Jy to SI units.
+    s2m = lambda s,z:  s*4.*PI*COSMO.luminosityDistance(z)**2./(1+z)\
+    *(rho_bh_analytic(z,**kwargs)/emissivity_radio(z,freq_obs*(1.+z),**kwargs))\
+    * (1e3*KPC/LITTLEH)**2.*kwargs['FLOUD'] #from (Mpc/h)^2 to meter^2
+    dvc = lambda z: DH*(COSMO.angularDiameterDistance(z)*(1.+z))**2./ COSMO.Ez(z)
     def dnds(s,z):
         mratio = s2m(s,z)/kwargs['MSEED']
-        if mratio>1 and mratio < np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_FEEDBACK']):
-            return rho_bh_analytic(COSMO.age(z)-kwargs['TAU_GROW']*np.log(mratio), quantity='number',derivative=True,**kwargs)\
-            *kwargs['TAU_GROW']/s
+        tv = COSMO.age(z)-kwargs['TAU_GROW']*np.log(mratio)
+        if mratio>1. and mratio <= np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_GROW']) and tv>1.35e-3:
+            zv = COSMO.age(tv,inverse=True)
+            return rho_bh_analytic(zv, quantity='number',derivative=True,**kwargs)\
+            *kwargs['TAU_GROW']/(s/JY)*kwargs['FLOUD']
         else:
             return 0.
 
-    return integrate.quad(lambda x: dnds(s_mks,x)*dvc,kwargs['ZLOW'],kwargs['ZHIGH'])[0]
+    return integrate.quad(lambda x: dnds(s_mks,x)*dvc(x),kwargs['ZLOW'],kwargs['ZHIGH'])[0]
 
 
 def T_radio_obs(fobs,**kwargs):
@@ -918,10 +959,14 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
         *(1./10./aaxis[tnum])**.5
     #generate radio background between 10MHz and 10 GHz
     faxis_rb=np.logspace(7,10,100)
+    saxis = np.logspace(-13,-1,100)
     if kwargs['COMPUTEBACKGROUNDS']:
         tradio_obs=T_radio_obs(faxis_rb,**kwargs)
+        if kwargs['SEEDMETHOD'] == 'FIXEDMASS':
+            dndsvals = np.array([dn_ds_domega(s,1.4e9,**kwargs) for s in saxis])
     else:
         tradio_obs=np.zeros_like(faxis_rb)
+        dndsvals = np.zeros_like(saxis)
     #compute soft X-ray background by redshifting latest jx
     jx_obs=jxs/(1.+zaxis[tnum])**3.
     eaxis_xb=xrays/(1.+zaxis[tnum])
@@ -934,6 +979,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
     'rho_bh_s':rho_bh(zaxis,quantity='seed',**kwargs),
     'rb_obs':np.vstack([faxis_rb,tradio_obs]).T,
     'ex_obs':np.vstack([eaxis_xb,jx_obs]).T,
+    'radio_counts':np.vstack([saxis,dndsvals]).T,
     'tau_ion_vals':tau_values}
     if diagnostic:
         output['jxs']=np.array(jx_matrix)
@@ -1202,10 +1248,14 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
         *(1./10./aaxis[tnum])**.5
     #generate radio background between 10MHz and 10 GHz
     faxis_rb=np.logspace(7,10,100)
+    saxis = np.logspace(-12,-1,100)
     if kwargs['COMPUTEBACKGROUNDS']:
         tradio_obs=T_radio_obs(faxis_rb,**kwargs)
+        if kwargs['SEEDMETHOD'] == 'FIXEDMASS':
+            dndsvals = np.array([dn_ds_domega(s,1.4e9,**kwargs) for s in saxis])
     else:
         tradio_obs=np.zeros_like(faxis_rb)
+        dndsvals = np.zeros_like(saxis)
     #compute soft X-ray background by redshifting latest jx
     jx_obs=jxs/(1.+zaxis[tnum])**3.
     eaxis_xb=xrays/(1.+zaxis[tnum])
@@ -1218,6 +1268,7 @@ def delta_Tb_feedback(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnos
     'rho_bh_s':rho_bh(zaxis,quantity='seed',**kwargs),
     'rb_obs':np.vstack([faxis_rb,tradio_obs]).T,
     'ex_obs':np.vstack([eaxis_xb,jx_obs]).T,
+    'radio_counts':np.vstack([saxis,dndsvals]).T,
     'tau_ion_vals':tau_values,'Jlws':Jlws,'Jlws_stars':Jlws_stars,'mcrits':mcrits,'tcrits':tcrits}
     if diagnostic:
         output['jxs']=np.array(jx_matrix)
@@ -1264,11 +1315,25 @@ class GlobalSignal():
         self.param_vals['COMPUTE_FEEDBACK']=self.config['COMPUTE_FEEDBACK']
         self.param_vals['LW_FEEDBACK']=self.config['LW_FEEDBACK']
         self.param_vals['COMPUTEBACKGROUNDS']=self.config['COMPUTEBACKGROUNDS']
+        if 'INCLUDE_REPROCESSED' not in self.config:
+            self.config['INCLUDE_REPROCESSED']=False
+        self.param_vals['INCLUDE_REPROCESSED']=self.config['INCLUDE_REPROCESSED']
+        if 'SEEDMETHOD' not in self.config:
+            self.param_vals['SEEDMETHOD'] = 'FIXEDRATIO'
+        else:
+            self.param_vals['SEEDMETHOD'] = self.config['SEEDMETHOD']
         if 'TVCRIT_FULL' not in self.config:
             self.config['TVCRIT_FULL']=False
         self.param_vals['TVCRIT_FULL']=self.config['TVCRIT_FULL']
         if 'XRAYJET' not in self.config:
             self.config['XRAYJET'] = False
+        if not 'SELFCONSISTENTO2' in self.config:
+            self.config['SELFCONSISTENTO2'] = False
+        if self.config['SELFCONSISTENTO2']:
+            self.param_vals['ALPHA_O2'] = (self.param_vals['ALPHA_X']*np.log(.2/2.)\
+            +self.param_vals['ALPHA_OX']*np.log(2./E2500KEV)\
+            +self.param_vals['ALPHA_O1']*np.log(E2500KEV/RYKEV))/np.log(.2/E2500KEV)
+        self.param_vals['SELFCONSISTENTO2'] = self.config['SELFCONSISTENTO2']
         self.param_vals['XRAYJET'] = self.config['XRAYJET']
         #if 'F_ESC_FROM_LOGN' not in self.config:
         #    self.config['F_ESC_FROM_LOGN']=False
@@ -1321,6 +1386,7 @@ class GlobalSignal():
                 param_set=self.param_history[rundate]
                 data_set=self.global_signals[rundate]
                 for data_key in data_set:
+                    #print(data_key)
                     gf.create_dataset(data_key,data=data_set[data_key])
                 for param_key in param_set:
                     gf.attrs[param_key]=param_set[param_key]
