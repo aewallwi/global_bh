@@ -8,12 +8,12 @@ import scipy.interpolate as interpolate
 import scipy.optimize as op
 from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
 from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0,NH0_CM,YP,KPC,YR,C,G
-from settings import POP_III_ION,POP_II_ION,DIRNAME,TH,KBOLTZMANN,ERG
+from settings import POP_III_ION,POP_II_ION,DIRNAME,TH,KBOLTZMANN,ERG,RY_KEV, KEV
 from colossus.lss import mass_function
 from colossus.lss import bias as col_bias
 from settings import SPLINE_DICT
 import scipy.interpolate as interp
-from settings import LY_N_ALPHA_SWITCH,HPLANCK_EV
+from settings import LY_N_ALPHA_SWITCH,HPLANCK_EV,HPLANCK_KEV,KBOLTZMANN_KEV
 from settings import NSPEC_MAX
 import scipy.special as sp
 A_ST=0.3222
@@ -73,6 +73,16 @@ def massfunc(m,z,model='tinker08',mdef='200m'):
 
 
 def bias(mvir,z,mode='tinker10',mdef='200m'):
+    '''
+    halo bias
+    Args:
+        mvir, virial mass [msol/h] (float)
+        z, redshift (float)
+        mode, string, specify mass function and mass function to be used
+        (see https://bdiemer.bitbucket.io/colossus/)
+    Returns:
+        float, bias for halos with mass mvir
+    '''
     return col_bias.haloBias(mvir, model = 'tinker10', z = z,mdef=mdef)
 
 
@@ -83,6 +93,9 @@ def sigma(m,z,derivative = False):
         mass, (msol/h)
         z, redshift
         derivative, if true, return - d ln \sigma / dm
+    Returns:
+        standard deviation of density field smoothed on mass scale (m) at
+        redshift z.
     '''
     #print('m=%.2e'%m)
     r=(3./4./PI*m/COSMO.rho_m(0.))**(1./3.)/1e3
@@ -94,6 +107,12 @@ def sigma(m,z,derivative = False):
 def nu(z,m,d=False):
     '''
     delta_crit/sqrt(2.*sigma**2.)
+    Args:
+        z, float, redshift
+        m, halo mass, (msol/h)
+        d, (if True, compute the derivative with respect to z)
+    Returns:
+        delta_crit/sqrt(2.*sigma**2.) (unitless)
     '''
     if not d:
         output=1.686/COSMO.growthFactor(z)/np.sqrt(2.)/sigma(m,0.)\
@@ -107,20 +126,9 @@ def nu(z,m,d=False):
         output=-nu(z,m,d=False)*(COSMO.growthFactor(z,derivative=True)\
         /COSMO.growthFactor(z,derivative=False)+0.0055/2\
         *pnumer/pdenom)
-    #print('nu=%.2e'%output)
     return output
 
-def rho_collapse_analytic(mmin,mmax,z,derivative=False,fractional=False,mode='ShethTormen', number = False):
-    assert mode in ['ShethTormen','PressSchechter']
-    if mmin<=mmax:
-        if mode == 'ShethTormen':
-            return rho_collapse_st(mmin,mmax,z,derivative=derivative,fractional=fractional, number = number)
-        elif mode=='PressSchechter':
-            assert not number
-            return rho_collapse_eps(mmin,mmax,z,derivative=derivative,fractional=fractional)
-    else:
-        return 0.
-def rho_collapse_st(mmin,mmax,z,derivative=False,fractional=False, number = False):
+def rho_collapse_st(mmin,mmax,z,fractional=False, number = False, verbose=False):
     '''
     Compute the comoving density of collapse matter or fraction of matter collapsed
     in halos between mass mmin and mmax at redshift z \
@@ -129,76 +137,39 @@ def rho_collapse_st(mmin,mmax,z,derivative=False,fractional=False, number = Fals
         mmin, minimum halo mass (msolar/h)
         mmax, maximum halo mass (msolar/h)
         z, redshift
-        derivative, if tru return derivative with respect to time in Gyr^-1
         fractional, if true, return fraction of density in halos, if false,
                     return comoving density in halos.
-        number, if true, return number of halos between mmin and mmax. Currently
-                only support derivative mode.
+        number, if true, return number of halos between mmin and mmax
+        (rather than density)
+    Returns:
+        density (msol/Mpc^3 h^2) or 'dimensionless' if fractional=True or
+        Mpc^-3 h^2 if number.
     '''
     assert not(fractional and number)
     nmax=nu(z,mmax)
     nmin=nu(z,mmin)
-    if not derivative:
-        if not number:
-            output=-sp.erf(B_ST**.5*nmin)-2.**(-P_ST)\
-            *sp.gamma(.5-P_ST)*sp.gammainc(.5-P_ST,B_ST*nmin**2.)
-            output=output+sp.erf(B_ST**.5*nmax)+2.**(-P_ST)\
-            *sp.gamma(.5-P_ST)*sp.gammainc(.5-P_ST,B_ST*nmax**2.)
-            output*=A_ST
-        else:
-            limlow = np.log(mmin)
-            limhigh = np.log(mmax)
-            g = lambda x: 2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*nu(z,np.exp(x))**-2./B_ST)**P_ST)\
-            * nu(z,np.exp(x)) * np.exp(- nu(z,np.exp(x))**2.*B_ST) * sigma(np.exp(x), z, derivative = True)
-            output = integrate.quad(g,limlow,limhigh)[0]
+
+    if not number:
+        lower=-sp.erf(B_ST**.5*nmin)-2.**(-P_ST)\
+        *sp.gamma(.5-P_ST)*sp.gammainc(.5-P_ST,B_ST*nmin**2.)
+        upper=sp.erf(B_ST**.5*nmax)+2.**(-P_ST)\
+        *sp.gamma(.5-P_ST)*sp.gammainc(.5-P_ST,B_ST*nmax**2.)
+        output=upper+lower
+        output*=A_ST
+        if verbose:print('not number, lower=%.2e'%lower)
+        if verbose:print('not number, upper=%.2e'%upper)
 
     else:
-        dzdt=-COSMO.Ez(z)*(1.+z)/TH
-        upper=2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(nmax)**-2./B_ST)**P_ST)*nmax*np.exp(-nmax**2.*B_ST)
-        lower=2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*(nmin)**-2./B_ST)**P_ST)*nmin*np.exp(-nmin**2.*B_ST)
-        upper = upper * ( - COSMO.growthFactor(z,derivative=True)/COSMO.growthFactor(z) + sigma(mmax,z,derivative=True)\
-                           *-1.5*mmax/(1.+z))
-        lower = lower * ( - COSMO.growthFactor(z,derivative=True)/COSMO.growthFactor(z) + sigma(mmin,z,derivative=True)\
-                           *-1.5*mmin/(1.+z))
-        if number:
-            upper = upper/mmax
-            lower = lower/mmin
-
-        output=upper - lower
-        output=output*dzdt
-
-
+        limlow = np.log(mmin)
+        limhigh = np.log(mmax)
+        g = lambda x: 2.*A_ST*np.sqrt(B_ST/PI)*(1.+(.5*nu(z,np.exp(x))**-2./B_ST)**P_ST)\
+        * nu(z,np.exp(x)) * np.exp(- nu(z,np.exp(x))**2.*B_ST) * sigma(np.exp(x), z, derivative = True)
+        output = integrate.quad(g,limlow,limhigh)[0]
+        if verbose:print('number, output=%.2e'%output)
     if not fractional:
         output = COSMO.rho_m(0.)*1e9*output
     return output
 
-
-def rho_collapse_eps(mmin,mmax,z,derivative=False,fractional=False):
-    '''
-    Compute comoving density of collapsed matter or fraction of matter collapsed
-    in halos between mass mmin and mmax at redshift z \
-    from extended press-schechter
-    Args:
-        mmin, minimum halo mass (msolar/h)
-        mmax, maximum halo mass (msolar/h)
-        z, redshift
-        derivative, if true, return derivative with respect to time in Gyr^-1
-        fractional, if true, return fraction of density in halos, if false
-                            return comoving density in halos.
-    '''
-    #if mmax>1e20 or mmin>1e20:
-    #    print('mmax=%e'%mmax)
-    #    print('mmin=%e'%mmin)
-    if not derivative:
-        output=(sp.erfc(nu(z,mmin))-sp.erfc(nu(z,mmax)))
-    else:
-        dzdt=-COSMO.Ez(z)*(1.+z)/TH
-        output=-dzdt*2./np.sqrt(PI)*\
-        (np.exp(-nu(z,mmin)**2.)*nu(z,mmin,d=True)\
-        -np.exp(-nu(z,mmax)**2.)*nu(z,mmax,d=True))
-    if not fractional:
-        output=COSMO.rho_m(0.)*1e9*output
-    return output
 
 def delta(z):
     '''
@@ -239,30 +210,19 @@ def tvir2mvir(t,z,mu=1.22):
     '''
     return 1e8*(t/tvir(1e8,z,mu))**(3./2.)
 
-def mCool(zm, tIGM, xeIGM, jLyw, **kwargs):
-    #Solve for Tvir such that
-    #k_B T_vir/delta_c/n_H/x_H2/Lambda(Tvir) == T_hubble(z)
-    return None
-
-def mmin(z,tIGM,xeIGM,jLyw,**kwargs):
-    '''
-    determine the minimum mass for Pop-III formation
-    given the Ly-W background and the IGM temperature
-    Args:
-        z, redshift, float
-        tIGM, float, temperature of the IGM
-        xeIGM, float, electron fraction in IGM
-        Jlyw, Ly-W background.
-        **kwargs, parameters for simulation
-    '''
-    return np.max([tvir2mvir(tIGM,z),
-                  mCool(z,tIGM,xeIGM,jLyw,**kwargs)])
-
-
 
 def stellar_spectrum(E_uv_in,pop='II',**kwargs):
-    #number of photons emitted (as fraction of ionizing)
-    #per energy E_uv
+    '''
+    Stellar UV spectrum (Barkana 2001).
+    Args:
+        E_uv, float, energy of photon (eV)
+        pop, string, 'II' or 'III'
+        kwargs, dictionary containing model parameters
+    Returns:
+        Number of UV photons as a fraction of the number of ionizing photons
+        per energy interval in units of lyman-alpha transition Energy
+        (number/E_lyalpha)
+    '''
     E_uv=E_uv_in/(.75*1e3*E_HI_ION)#Units of ly-alpha energy
     splkey=('stellar_spectrum',pop)
     if not splkey in SPLINE_DICT:
@@ -303,9 +263,6 @@ def stellar_spectrum(E_uv_in,pop='II',**kwargs):
                                     #per lyman-alpha energy
 
 
-
-
-
 def vVir(m,z):
     '''
     virial velocity of halo in km/sec
@@ -333,31 +290,18 @@ def rVir(m,z):
     return 206.*(COSMO.Om(z)*delta(z)/97.2)**(-1./3.)\
     *(m/1e12)**(1./3.)*(1.+z)**-1.*1e-3*(1.+z)
 
-
-def nH(m,z):
-    '''
-    Number of Hydrogen atoms in a halo with mass m_h
-    Args:
-    m, float, mass of halo in msolar/h
-    z,float,redshift
-    '''
-    return m*Ob(0.)/Om(0.)*(1.-YP)/MP*MSOL*LITTLEH
-def nHe(m,z):
-    '''
-    Number of Hydrogen atoms in a halo with mass m_h
-    Args:
-    m, float, mass of halo in msolar/h
-    z,float,redshift
-    '''
-    return nH(m,z)*YP/4./(1-YP)
-
 #*******************************************
-#Ionization parameters
+#Atomic Data/Info
 #*******************************************
 def sigma_HLike(e,z=1.):
     '''
     gives ionization cross section in cm^2 for an X-ray with energy ex (keV)
-    for a Hydrogen-like atom with atomic number z
+    for a Hydrogen-like atom with atomic number Z
+    Args:
+        e, float, photon energy (in keV)
+        z, atomic number
+    Returns:
+        photo-ionization cross section, float, (cm^2)
     '''
     ex=e*1e3 #input energy in keV, convert to eV
     e1=13.6*z**2.
@@ -380,6 +324,10 @@ def sigma_HeI(e):
     '''
     gives ionization cross section in cm^2 for X-ray of energy ex (keV)
     for HeI atom.
+    Args:
+        e, energy of ionizing photon (keV)
+    Returns:
+        photo-ionization cross section(cm^2)
     '''
     ex=e*1e3#input energy is in keV, convert to eV
     if isinstance(ex,float):
@@ -443,8 +391,6 @@ def init_interpolation_tables():
         SPLINE_DICT[('shull_heating',xi)]=interp.interp1d(itable[:,0]/1e3,itable[:,8])
         SPLINE_DICT[('min_e_kev',xi)]=(itable[:,0]/1e3).min()
         SPLINE_DICT[('max_e_kev',xi)]=(itable[:,0]/1e3).max()
-
-
 
 def interp_heat_val(e_kev,xi,mode='f_ion'):
     '''
@@ -547,23 +493,31 @@ def xray_lyalpha_integrand(ex,xe,jxf):
 def ion_sum(ex,xe):
     '''
     \sum_{i,j}(hnu-E^th_j)*(fion,HI/E^th_j)f_i x_i \sigma_i
-    for hun=ex
+    for hnu=ex
     and ionized IGM fraction xe
+    Args:
+        ex, energy of photon, float
+        xe, electron fraction (float)
+    Returns:
+        number of ionizations that occur per photon flux unit with energy ex
+        [cm^2 ]
     '''
+    #extra energies not deposited into ionization
     e_hi=ex-E_HI_ION
     e_hei=ex-E_HEI_ION
     e_heii=ex-E_HEII_ION
 
+    #number of ionizations that occur from H-ionization
     fi_hi=interp_heat_val(e_hi,xe,'n_{ion,HI}')\
     +interp_heat_val(e_hi,xe,'n_{ion,HeI}')\
     +interp_heat_val(e_hi,xe,'n_{ion,HeII}')+1.
     fi_hi=fi_hi*(F_H*(1-xe))*sigma_HLike(ex)
-
+    #number of ionizations that occur from HeI-ionization
     fi_hei=interp_heat_val(e_hei,xe,'n_{ion,HI}')\
     +interp_heat_val(e_hei,xe,'n_{ion,HeI}')\
     +interp_heat_val(e_hei,xe,'n_{ion,HeII}')+1.
     fi_hei=fi_hei*(F_HE*(1-xe))*sigma_HeI(ex)
-
+    #number of ionizations that occur from HeII-ionization
     fi_heii=interp_heat_val(e_heii,xe,'n_{ion,HI}')\
     +interp_heat_val(e_heii,xe,'n_{ion,HeI}')\
     +interp_heat_val(e_heii,xe,'n_{ion,HeII}')+1.
@@ -598,8 +552,6 @@ def clumping_factor(z):
     '''
     return 2.9*((1.+z)/6.)**(-1.1)
     #return 27.466*np.exp(-0.114*z+0.001328*z*z)
-
-
 
 def kappa_10_HH(tk):
     '''
@@ -842,125 +794,23 @@ def n_h(m,z,cs=1.):
     *(1.-YP)/(1.-.75*YP)
 
 
-def tau_feedback_momentum(mvir,z,ta,fh,eps=5e-2):
+def gamma_c(tg,nmax=20, gff = 1.1, gfb = lambda x: 1.05):
     '''
-    Calculate the effective feedback time
+    continuum emission coefficient from free-free and
+    bound-free electron collisions (Fernandez 2006)
     Args:
-        mvir, virial mass of halo (msolar/h)
-        z, redshift
-        ta, accretion time-scale (salpeter time) in Gyr
-        fh, fraction of halo baryons that are incorporated into bh seed
-        eps, radiative efficiency of accretion
+        tg, gas temperature (Kelvin)
+        nmax, number of bound-free terms in sum include (default = 20)
+        gff, free-free gaunt factor
+        gfb, bound-free gaunt factor.
     Returns:
-        time (Gyr) before black hole mass growth is cutoff by momentum feedback
+        continuum emission coefficient (keV K^1/2 cm^3 kev^-1 sec^-1)
     '''
-    vc=vVir(mvir,z)*1e3
-    return ta*np.log(16.*vc**4.*ta*YR*1e9/(G*fh*mvir*MSOL*eps*C*1e3))
-
-def h2_cool_rate(t):
-    '''
-    h2 cooling rate per atom at temperature,t
-    Args:
-        t, temperature, kelvin
-    Returns:
-        cooling rate in erg cm^3 sec^-1
-    '''
-    lt=np.log10(t)
-    output= - 103.0+97.59*lt-48.05*lt**2.+10.80*lt**3.-0.9032*lt**4.
-    return np.exp(output*np.log(10.))
-
-def h2_frac(tvir,z,xe,jlw,delta_c=2000.):
-    '''
-    molecular fraction
-    Args:
-        tvir, virial temperature of halo
-        z, redshift
-        xe, electron fraction in IGM
-        jlw, lyman werner flux (erg/sec/cm^2)
-        delta_c, core overdensity.
-    '''
-    #July 30th 2018 -- I am here!
-    chi=YP/4./(1.-YP)
-    th=(COSMO.age(z)*YR*1e9)
-    trec=(xe*clumping_factor(z)*alpha_A(tvir)\
-    *NH0_CM*(1+chi)*(1.+z)**3.*delta_c)**-1.
-    R=np.min([xe,trec/th])
-    ne=delta_c*NH0_CM*(1.+z)**3.*np.sqrt(xe*R)
-    k1=1.4e-18*tvir**0.928*np.exp(-tvir/16200.)
-    GLW=jlw*2.4/1.6e-3/HPLANCK_EV
-    k2=np.max([3.3e-11*GLW,1./th])
-    #print(3.3e-11*GLW)
-    #print(k2)
-    mv=tvir2mvir(tvir,z)
-    rc=0.22/5.*rVir(mv,z)*KPC*1e3*1e2/(1.+z)*LITTLEH #core radius in cm
-    xh2_old=ne*(k1/k2)
-    xh2=xh2_old*.9
-    #print(xh2)
-    #compute self shielding with loop
-    eps=1e-3
-    while np.abs(xh2/xh2_old-1.)>eps:
-        nh2=rc*xh2_old*NH0_CM*(1.+z)**3.*delta_c
-        xh2_old=xh2
-        xh2=ne*(k1/k2)*(1.+nh2/1e14)**.75
-    return np.min([xh2,1.])
-
-def tau_cool(tv,z,xe,jlw,delta_c=2000.):
-    '''
-    cooling time through H2
-    Args:
-        tv, virial temperature (K)
-        z, redshift
-        xe, electron fraction
-        jlw, lyman-werner background in units of ergs/sec/cm^2
-        delta_c, overdensity of gaseous halo core
-    '''
-    nh = NH0_CM*(1.+z)**3.
-    xh2 = h2_frac(tv,z,xe,jlw,delta_c)
-    dcooldt = h2_cool_rate(tv)
-    #print(dcooldt)
-    return KBOLTZMANN*tv/( delta_c * nh * xh2 * dcooldt )/ERG
-
-def tv_crit(z,xe,jlw):
-    '''
-    compute the critical mass for pop-III star formation
-    given a lyman-werner background jlw and ionized fraction xe
-    Args:
-        z, redshit
-        xe, ionized fraction of H
-        jlw, Lyman-Werner background (erg/cm^2/sec)
-    Returns:
-        critical tvirial (Kelvin) below which H2 cooling is ineffective.
-    '''
-    g = lambda x: tau_cool(x,z,xe,jlw)/(COSMO.age(z)*1e9*YR)-1.
-    return op.fsolve(g,x0=[1e1])[0]
-
-def tv_crit_v14(z,jlw):
-    '''
-    Compute the critical virial temperature without considering the free-electron
-    fraction produced by X-rays using the fitting formula by Visbal+ 2014
-    '''
-    mc=2.5e5*(1.+6.96*(4*PI*jlw/1e-21)**.47)*((1.+z)/26.)**-1.5
-    mc=mc/LITTLEH
-    return tvir(mc,z)
-
-
-    def gamma_c(tg,nmax=20, gff = 1.1, gfb = lambda x: 1.05):
-        '''
-        continuum emission coefficient from free-free and
-        bound-free electron collisions (Fernandez 2006)
-        Args:
-            tg, gas temperature (Kelvin)
-            nmax, number of bound-free terms in sum include (default = 20)
-            gff, free-free gaunt factor
-            gfb, bound-free gaunt factor.
-        Returns:
-            continuum emission coefficient (keV K^1/2 cm^3)
-        '''
-        nvals = np.arange(2,nmax+1)
-        xvals = (EH/(KBKEV*tg*nvals**2.))
-        output = 5.44e-39 * ( gff + np.sum(gfb(nvals)*np.exp(xvals)*xvals/nvals ))
-        #convert from ergs to kev
-        return output / 1.60218e-9
+    nvals = np.arange(2,nmax+1)
+    xvals = (RY_KEV/(KBOLTZMANN_KEV*tg*nvals**2.))
+    output = 5.44e-39 * ( gff + np.sum(gfb(nvals)*np.exp(xvals)*xvals/nvals ))
+    #convert from ergs to kev
+    return output * ERG / KEV / HPLANCK_KEV
 
 
 
@@ -973,18 +823,15 @@ def labs_over_q(**kwargs):
     Returns:
         L_abs/Q_H (keV)
     '''
-    eabs = lambda x: np.exp(-10.**kwargs['LOG10_N']*(F_H*sigma_HLike(x)\
-            +F_HE/F_H*sigma_HeI(x)))
-    g = lambda x: (x/.2)**(-kwargs['ALPHA_X'])*np.exp(-x/kwargs['ECUT'])*(1.-eabs(x))
+    eabs = lambda x: np.exp(-10.**kwargs['LOG10_N']*sigma_HLike(x))
+    g = lambda x: (x/.2)**(-kwargs['ALPHA_X'])*np.exp(-x/300.)*(1.-eabs(x))
     h = lambda x: (x/.2)**(-kwargs['ALPHA_O2'])*(1.-eabs(x))
 
-    j = lambda x: (1. + .3*(x/EH-1.))*g(x)/x
+    j = lambda x: (1. + (1./3.)*(x/RY_KEV-1.))*g(x)/x
     k = lambda x: h(x)/x
-    output = integrate.quad(g,.2,np.inf)[0] + integrate.quad(h,EH,.2)[0]
-    output = output/(integrate.quad(k,EH,.2)[0]+integrate.quad(j,.2,np.inf)[0])
+    output = integrate.quad(g,.2,np.inf)[0] + integrate.quad(h,RY_KEV,.2)[0]
+    output = output/(integrate.quad(k,RY_KEV,.2)[0]+integrate.quad(j,.2,np.inf)[0])
     return output
-
-
 
 
 
@@ -997,7 +844,10 @@ def p_lya(y):
     Returns:
         p(y) [units of dimensionless y^-1], \int_0^1 p(y) ~ 1
     '''
-    return 1.307 - 2.627 * (y - .5)**2. + 2.563 * (y-.5)**4. -51.69 * (y-.5)**6.
+    if y>=0. and y<=1.:
+        return 1.307 - 2.627 * (y - .5)**2. + 2.563 * (y-.5)**4. -51.69 * (y-.5)**6.
+    else:
+        return 0.
 
 coeffs_lt = {'2p':np.array([3.435e-1,1.297e-5,2.178e-12,7.928e-17]),
              '3s':np.array([6.25e-2,-1.299e-6,2.666e-11,3.973e-16]),
@@ -1022,7 +872,7 @@ def qcoll(transition,tg):
     if tg > 5e4: coeffs = coeffs_ht[transition]
     else: coeffs = coeffs_lt[transition]
     gamma = np.dot(coeffs,tg**np.arange(4))
-    return 8.629e-6*gamma/g/tg**.5*np.exp(RY_KEV*(1.-1./n**2.)/KBOLTZMANN_KEV/tg)
+    return 8.629e-6*gamma/g/tg**.5*np.exp(-RY_KEV*(1.-1./n**2.)/KBOLTZMANN_KEV/tg)
 
 def c_coll(tg):
     '''
@@ -1049,15 +899,8 @@ def solve_t(**kwargs):
     splkey = dict2tuple(kwargs)+('temperature',0)
     if not splkey in SPLINE_DICT:
         loq = labs_over_q(**kwargs)
-        g = lambda t: KBOLTZMANN_KEV*t*4.*np.pi*gamma_c(t)/t**.5/alpha_B(t)/HPLANCK_KEV + 2.*HPLANCK_KEV*RY_KEV*(1-.25)*.53*(1.+(1.-.5)/.5*c_coll(t)/alpha_b(t)) - loq
-        #find root
-        h = lambda t: KBOLTZMANN_KEV*t**.5*4.*np.pi*gamma_c(t)/alpha_B(t)/HPLANCK_KEV
-        f = lambda t: 2.*HPLANCK_KEV*RY_KEV*(1-.25)*.53*(1.+(1.-.5)/.5*c_coll(t)/alpha_b(t))
-        #plt.plot(np.logspace(3,5,100),(np.vectorize(g)(np.logspace(3,5,100))),ls='--',color='k')
-        #plt.plot(np.logspace(3,5,100),np.abs(np.vectorize(h)(np.logspace(3,5,100))),ls='--',color='r')
-        #plt.plot(np.logspace(3,5,100),np.abs(np.vectorize(f)(np.logspace(3,5,100))),ls='--',color='orange')
-        #plt.yscale('log')
-        #plt.grid()
-        #plt.xscale('log')
+        g = lambda t: KBOLTZMANN_KEV*t*4.*np.pi*gamma_c(t)/t**.5/alpha_B(t/1e4) \
+        + 2.*RY_KEV*(1-.25)*.53*(1.+(1.-.5)/.5*c_coll(t)/alpha_B(t/1e4)) - loq
         SPLINE_DICT[splkey] = op.fsolve(lambda x: g(x),x0=[1e3])[0]
+        print('T=%.2f'%SPLINE_DICT[splkey])
     return SPLINE_DICT[splkey]
