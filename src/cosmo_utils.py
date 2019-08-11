@@ -6,7 +6,7 @@ import os
 import scipy.integrate as integrate
 import scipy.interpolate as interpolate
 import scipy.optimize as op
-from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION
+from settings import COSMO, MP, MSOL, LITTLEH,PI,BARN,E_HI_ION,E_HEI_ION, DH
 from settings import E_HEII_ION,SIGMAT,F_H,F_HE,A10,TCMB0,NH0_CM,YP,KPC,YR,C,G
 from settings import POP_III_ION,POP_II_ION,DIRNAME,TH,KBOLTZMANN,ERG,RY_KEV, KEV
 from colossus.lss import mass_function
@@ -904,3 +904,13 @@ def solve_t(**kwargs):
         SPLINE_DICT[splkey] = op.fsolve(lambda x: g(x),x0=[1e3])[0]
         print('T=%.2f'%SPLINE_DICT[splkey])
     return SPLINE_DICT[splkey]
+
+def dvc(z):
+    '''
+    comoving volume element (Mpc/h)^3
+    Args:
+        z, redshift, float
+    returns;
+        comoving volume element dvc/ dz /d omega
+    '''
+    return  DH*(COSMO.angularDiameterDistance(z)*(1.+z))**2./ COSMO.Ez(z)*LITTLEH

@@ -232,20 +232,31 @@ def emissivity_radio(z,freq,**kwargs):
         in W/Hz*(h/Mpc)^3
     '''
     if z<=kwargs['ZMAX'] and z>=kwargs['ZMIN']:
-        return 3.8e23\
-        *(log_normal_moment(kwargs['R_MEAN'],kwargs['R_STD'],1.)/1.6e4)\
-        *(kwargs['FLOUD']/.1)\
-        *(kwargs['GBOL']/.003)\
-        *(.045/kwargs['TAU_GROW'])\
-        *(xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)\
-        *2.**(0.9-kwargs['ALPHA_X'])\
-        *(2.48e-3)**(1.6-kwargs['ALPHA_OX'])\
-        *(2.8)**(kwargs['ALPHA_R']-.6)\
-        *(4.39)**(-(kwargs['ALPHA_O1']-.61))\
-        *(rho_bh(z,**kwargs)/1e4)\
-        *(freq/1e9)**(-kwargs['ALPHA_R'])
+        return radio_luminosity_over_mass(freq, **kwargs)\
+        *(rho_bh(z,**kwargs)/1e4) * 1e4
     else:
         return 0.
+
+def radio_luminosity_over_mass(freq, **kwargs):
+    '''
+    radio luminosity per solar mass from a black hole.
+    Args:
+        freq, co-moving frequency, float
+        kwargs, model dictionary of paraemters.
+    '''
+    return 3.8e23\
+    *(log_normal_moment(kwargs['R_MEAN'],kwargs['R_STD'],1.)/1.6e4)\
+    *(kwargs['FLOUD']/.1)\
+    *(kwargs['GBOL']/.003)\
+    *(.045/kwargs['TAU_GROW'])\
+    *(xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)\
+    *2.**(0.9-kwargs['ALPHA_X'])\
+    *(2.48e-3)**(1.6-kwargs['ALPHA_OX'])\
+    *(2.8)**(kwargs['ALPHA_R']-.6)\
+    *(4.39)**(-(kwargs['ALPHA_O1']-.61))\
+    *(freq/1e9)**(-kwargs['ALPHA_R']) / 1e4
+
+
 
 def emissivity_xrays(z,E_x,obscured=True,**kwargs):
     '''
@@ -637,13 +648,18 @@ def J_Xrays_obs(Eobs,**kwargs):
 def dn_ds_domega(sjy,freq_obs,**kwargs):
     '''
     Compute differential number of sources per flux bin
+    args:
+        sjy, source flux in jy
+        freq_obs, observed frequency (Hz)
+        kwargs, dict of args
+    returns:
+        dn /ds /domega [Jy^-1 Sr^-1]
     '''
     s_mks = sjy*JY #convert Jy to SI units.
     s2m = lambda s,z:  s*4.*PI*COSMO.luminosityDistance(z)**2./(1+z)\
     *(rho_bh(z,**kwargs)/emissivity_radio(z,freq_obs*(1.+z),**kwargs))\
     * (1e3*KPC/LITTLEH)**2.*kwargs['FLOUD'] #from (Mpc/h)^2 to meter^2
-    dvc = lambda z: DH*(COSMO.angularDiameterDistance(z)*(1.+z))**2./ COSMO.Ez(z)*LITTLEH
-    def dnds(s,z):
+    def dnds_temp(s,z):
         mratio = s2m(s,z)/kwargs['MSEED']
         tv = COSMO.age(z)-kwargs['TAU_GROW']*np.log(mratio)
         if mratio>1. and mratio <= np.exp(kwargs['TAU_FEEDBACK']/kwargs['TAU_GROW']) and tv>1.35e-3:
@@ -652,8 +668,9 @@ def dn_ds_domega(sjy,freq_obs,**kwargs):
             *kwargs['TAU_GROW']/(s/JY)*kwargs['FLOUD']
         else:
             return 0.
-
-    return integrate.quad(lambda x: dnds(s_mks,x)*dvc(x),kwargs['ZLOW'],kwargs['ZHIGH'])[0]
+    zlow = COSMO.age(COSMO.age(kwargs['Z_SEED_MIN'])+kwargs['TAU_FEEDBACK'],inverse=True)
+    zlow = kwargs['ZLOW']
+    return integrate.quad(lambda x: dnds_temp(s_mks,x)*dvc(x),zlow,kwargs['ZHIGH'])[0]
 
 
 def T_radio_obs(fobs,**kwargs):
@@ -675,6 +692,125 @@ def T_radio_obs(fobs,**kwargs):
         return SPLINE_DICT[splkey]*(fobs/1e9)**(-2.-kwargs['ALPHA_R'])
     else:
         raise(ValueError('Must provide frequencies as numpy array or float.'))
+
+def radio_loudness(s_obs, freq_obs, z, mbh, **kwargs):
+    '''
+    Compute the radio loudness necessary to produce a flux s_obs from redshift z
+    and black hole mass mbh.
+    args:
+        s_obs, float, observed flux (Jy)
+        freq_obs, float, observed frequency (Hz)
+        z, float, redshift
+        mbh, float, black hole mass (msol/h)
+        kwargs, model params
+    returns:
+        float, radio loudness required
+    '''
+    l_em = 4. * np.pi * COSMO.luminosityDistance(z) ** 2. / (1 + z) * JY \
+    * (1e3 * KPC / LITTLEH) ** 2. * s_obs
+    l_bh = 1.24e16 * (mbh / LITTLEH) * ((4000./912.) ** (.61-kwargs['ALPHA_O1']))\
+    * (2. ** (0.9 - kwargs['ALPHA_X'])) * ((2.43e-3) ** (1.6 - kwargs['ALPHA_OX']))\
+    * ((freq_obs * (1.+z) / 2.8e9) ** -kwargs['ALPHA_R'] )* (kwargs['GBOL']/.003)\
+    * (.045 / kwargs['TAU_GROW'])\
+    * (xray_integral_norm(kwargs['ALPHA_X'],2.,10.)/.53)
+    return np.log10(l_em/l_bh)
+
+def dnds_dz_slow(s_obs, freq_obs, z, **kwargs):
+    '''
+    integrand for computing dn/ds -- gives dn/ds/dz
+    Args:
+        s_obs, observed flux (Jy)
+        freq_obs, observed frequency (Hz)
+        z, float, redshift
+    Returns:
+        dn/ds/dz
+    '''
+    mkey = (s_obs, freq_obs) + dict2tuple(kwargs)
+    def dndm(x):
+        tv = COSMO.age(z) - x
+        if tv > 1.35e-3:
+            zv = COSMO.age(tv,inverse=True)
+            return rho_bh(zv, quantity='seednumber',
+            derivative=True, **kwargs)
+        else:
+            return 0.
+    r = lambda x: radio_loudness(s_obs, freq_obs, z, kwargs['MSEED'] * LITTLEH\
+    * np.exp(x / kwargs['TAU_GROW']), **kwargs)
+    if np.abs(r(0.)-kwargs['R_MEAN'])\
+     + np.abs(r(kwargs['TAU_FEEDBACK'])-kwargs['R_MEAN']) <= 8. * kwargs['R_STD']:
+        g = lambda x: dndm(x) * np.exp(-(r(x)-kwargs['R_MEAN']) ** 2.\
+        / 2. / kwargs['R_STD'] ** 2.)
+        output = integrate.quad(g, 0.,
+        kwargs['TAU_FEEDBACK'])[0] * kwargs['FLOUD']
+        return output * 1. / np.log(10.) / s_obs / np.sqrt(2. * np.pi) / kwargs['R_STD']
+    else:
+        return np.exp(-90.)
+
+
+def dnds_dz(s_obs, freq_obs, z, **kwargs):
+    '''
+    integrand for computing dn/ds -- gives dn/ds/dz
+    Args:
+        s_obs, observed flux (Jy)
+        freq_obs, observed frequency (Hz)
+        z, float, redshift
+    Returns:
+        dn/ds/dz
+    '''
+    tmin = COSMO.age(kwargs['Z_SEED_MIN'])+kwargs['TAU_FEEDBACK']
+    zmin = COSMO.age(tmin, inverse=True)
+    zmin = kwargs['ZLOW']
+    mkey = (s_obs, freq_obs) + dict2tuple(kwargs)
+    if not mkey in SPLINE_DICT:
+        ivals = np.zeros(40)
+        zaxis = np.logspace(np.log10(zmin),np.log10(kwargs['ZHIGH']),40)
+        for znum,zval in enumerate(zaxis):
+            def dndm(x):
+                tv = COSMO.age(zval) - x
+                if tv > 1.35e-3:
+                    zv = COSMO.age(tv,inverse=True)
+                    return rho_bh(zv, quantity='seednumber',
+                    derivative=True, **kwargs)
+                else:
+                    return 0.
+            r = lambda x: radio_loudness(s_obs, freq_obs, zval, kwargs['MSEED'] * LITTLEH\
+            * np.exp(x / kwargs['TAU_GROW']), **kwargs)
+            #if r(kwargs['TAU_FEEDBACK'])-kwargs['R_MEAN'] <= -3. * kwargs['R_STD']:
+            g = lambda x: dndm(x) * np.exp(-(r(x)-kwargs['R_MEAN']) ** 2.\
+            / 2. / kwargs['R_STD'] ** 2.)
+            ivals[znum] = integrate.quad(g, 0.,
+            kwargs['TAU_FEEDBACK'])[0] * kwargs['FLOUD']
+            ivals[znum] *= 1. / np.log(10.) / s_obs / np.sqrt(2. * np.pi) / kwargs['R_STD']
+            #else:
+            #    ivals[znum] = np.exp(-90.)
+        ivals[ivals<=0.] = np.exp(-90)
+        SPLINE_DICT[mkey] = interp.interp1d(zaxis, np.log(ivals))
+    if z >= zmin:
+        return np.exp(SPLINE_DICT[mkey](z)) * dvc(z)
+    else:
+        return 0.
+
+def dnds(s_obs, freq_obs, **kwargs):
+    '''
+    Args:
+        s_obs, observed flux (Jy)
+        freq_obs, observed frequency (Hz)
+        kwargs, argument dictionary.
+    Retuns:
+        dn /ds /domega [Jy^-1 Sr^-1]
+    '''
+    g = lambda x: dnds_dz(s_obs, freq_obs, x, **kwargs)
+    return integrate.quad(g, kwargs['ZLOW'], kwargs['ZHIGH'])[0]
+
+def source_counts(**kwargs):
+    saxis = np.logspace(-12,-2,100)
+    dndsvals = []
+    for snum,sval in enumerate(saxis):
+        print(snum)
+        dndsvals.append(dnds(sval,1.4e9,**kwargs))
+    dndsvals = np.array(dndsvals)
+    #dndsvals = np.array([dnds(s,1.4e9,**kwargs) for s in saxis])
+    return {'radio_counts':np.vstack([saxis,dndsvals]).T}
 
 
 def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
@@ -821,7 +957,7 @@ def delta_Tb(zlow,zhigh,ntimes=int(1e3),T4_HII=1.,verbose=False,diagnostic=False
     saxis = np.logspace(-13,-1,100)
     if kwargs['COMPUTEBACKGROUNDS']:
         tradio_obs=T_radio_obs(faxis_rb,**kwargs)
-        dndsvals = np.array([dn_ds_domega(s,1.4e9,**kwargs) for s in saxis])
+        dndsvals = np.array([dnds(s,1.4e9,**kwargs) for s in saxis])
     else:
         tradio_obs=np.zeros_like(faxis_rb)
         dndsvals = np.zeros_like(saxis)
@@ -941,6 +1077,18 @@ class GlobalSignal():
         zlow=self.config['ZLOW'],zhigh=self.config['ZHIGH'],
         ntimes=self.param_vals['NTIMESGLOBAL'],**self.param_vals,diagnostic=True,verbose=verbose)
         self.param_history[rundate]=copy.deepcopy(self.param_vals)
+
+
+    def calculate_source_counts(self,verbose=False):
+        '''
+        wrapper for computing source counts
+        '''
+        rundate = str(datetime.datetime.now())
+        #self.run_dates.append(rundate)
+        self.source_counts = source_counts(**self.param_vals)
+        #self.param_history[rundate]=copy.deepcopy(self.param_vals)
+
+
     def save_to_disk(self):
         hf = h5py.File(self.config['OUTPUTNAME']+'.h5', 'w')
         for rundate in self.run_dates:
